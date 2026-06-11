@@ -1,0 +1,30 @@
+# CI: build + unit tests on every push/PR. This workflow is real and should pass as-is.
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Build and test
+        run: ./mvnw -B package
+
+      - name: Upload fat jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: ibmi-mcp-server-lite
+          path: target/ibmi-mcp-server-lite-*.jar
+          if-no-files-found: error
