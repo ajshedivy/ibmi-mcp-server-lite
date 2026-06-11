@@ -18,9 +18,14 @@ The MCP Java SDK requires **Java 17**. On IBM i today:
   repo metadata at `public.dhe.ibm.com/software/ibmi/products/pase/rpms/repo`).
 - The classic JV1 JDKs on a stock system are Java 8 and 11
   (`/QOpenSys/QIBM/ProdData/JavaVM/jdk80|jdk11`).
-- **IBM Semeru Runtime Certified Edition for IBM i 17** (5770-JV1 option) is the
-  supported path to Java 17 on IBM i — install it if your system/entitlement allows,
-  then point `JAVA` in the launcher at it.
+- **Java 17 IS supported on IBM i** — as *IBM Technology for Java 17* (IBM Semeru
+  Runtime Certified Edition, OpenJ9), shipped as **5770-JV1 option 20** for IBM i 7.4+
+  (GA May 2023; install from ESS/OS media, PTF group SF99665 ≥18 on 7.4 / SF99955 ≥5 on
+  7.5 / SF99965 ≥1 on 7.6). `JAVA_HOME=/QOpenSys/QIBM/ProdData/JavaVM/jdk17/64bit`.
+  **Java 21** followed in September 2025 as **option 21** on IBM i 7.5+
+  (`.../jdk21/64bit`). Install one of these and point `JAVA` in the launcher at it.
+  The test partition used during development had neither option installed — only
+  options for Java 8 and 11.
 
 ### What we tried (so you don't have to)
 
