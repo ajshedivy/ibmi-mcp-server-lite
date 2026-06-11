@@ -1,0 +1,72 @@
+# Sample YAML tool configuration for ibmi-mcp-server-lite.
+# Format-compatible with the IBM i MCP Server YAML tool schema:
+# https://github.com/IBM/ibmi-mcp-server
+sources:
+  ibmi-system:
+    host: ${DB2i_HOST}
+    user: ${DB2i_USER}
+    password: ${DB2i_PASS}
+    port: 8076
+    ignore-unauthorized: true
+
+tools:
+  system_status:
+    source: ibmi-system
+    description: "Overall system performance statistics with CPU, memory, and I/O metrics"
+    parameters: []
+    statement: |
+      SELECT * FROM TABLE(QSYS2.SYSTEM_STATUS(RESET_STATISTICS=>'YES',DETAILED_INFO=>'ALL')) X
+    annotations:
+      readOnlyHint: true
+      title: "System Status"
+
+  active_job_info:
+    source: ibmi-system
+    description: "Find the top CPU consumers in the QUSRWRK and QSYSWRK subsystems"
+    parameters:
+      - name: limit
+        type: integer
+        default: 10
+        min: 1
+        max: 100
+        description: "Number of top CPU consumers to return"
+    statement: |
+      SELECT CPU_TIME, A.* FROM
+      TABLE(QSYS2.ACTIVE_JOB_INFO(SUBSYSTEM_LIST_FILTER => 'QUSRWRK,QSYSWRK')) A
+      ORDER BY CPU_TIME DESC
+      FETCH FIRST :limit ROWS ONLY
+    annotations:
+      readOnlyHint: true
+      title: "Active Job Info"
+
+  list_user_libraries:
+    source: ibmi-system
+    description: "List libraries on the system whose name matches a pattern"
+    parameters:
+      - name: library_pattern
+        type: string
+        required: true
+        description: "Library name pattern, SQL LIKE syntax (e.g. 'Q%')"
+    statement: |
+      SELECT OBJNAME AS LIBRARY, OBJTEXT AS DESCRIPTION
+      FROM TABLE(QSYS2.OBJECT_STATISTICS('*ALLSIMPLE', 'LIB')) Z
+      WHERE OBJNAME LIKE :library_pattern
+      ORDER BY OBJNAME
+      FETCH FIRST 50 ROWS ONLY
+    annotations:
+      readOnlyHint: true
+      title: "List Libraries"
+
+toolsets:
+  performance:
+    title: "Performance"
+    description: "System performance monitoring tools"
+    tools:
+      - system_status
+      - active_job_info
+
+  discovery:
+    title: "Discovery"
+    description: "Object and library discovery tools"
+    tools:
+      - list_user_libraries
