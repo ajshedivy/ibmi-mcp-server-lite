@@ -1,0 +1,63 @@
+package com.ibm.ibmi.mcp.sql;
+
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
+import java.util.List;
+
+import org.junit.jupiter.api.Test;
+
+import com.ibm.ibmi.mcp.config.SecurityConfig;
+
+class SqlSecurityValidatorTest {
+
+  @Test
+  void selectAndWithPassByDefault() {
+    assertDoesNotThrow(() -> SqlSecurityValidator.validate(
+        "SELECT * FROM QSYS2.SYSTEM_STATUS_INFO", SecurityConfig.DEFAULTS));
+    assertDoesNotThrow(() -> SqlSecurityValidator.validate(
+        "WITH X AS (SELECT 1 FROM SYSIBM.SYSDUMMY1) SELECT * FROM X", SecurityConfig.DEFAULTS));
+  }
+
+  @Test
+  void writesAreRejectedByDefault() {
+    assertThrows(SecurityException.class, () -> SqlSecurityValidator.validate(
+        "DELETE FROM SAMPLE.EMPLOYEE", SecurityConfig.DEFAULTS));
+    assertThrows(SecurityException.class, () -> SqlSecurityValidator.validate(
+        "SELECT 1 FROM SYSIBM.SYSDUMMY1; DROP TABLE T", SecurityConfig.DEFAULTS));
+  }
+
+  @Test
+  void readOnlyFalseAllowsWrites() {
+    SecurityConfig writable = new SecurityConfig(false, null, null);
+    assertDoesNotThrow(() -> SqlSecurityValidator.validate(
+        "INSERT INTO T VALUES (1)", writable));
+  }
+
+  @Test
+  void dangerousWordInsideStringLiteralIsIgnored() {
+    assertDoesNotThrow(() -> SqlSecurityValidator.validate(
+        "SELECT * FROM T WHERE NOTE = 'PLEASE DROP ME A LINE'", SecurityConfig.DEFAULTS));
+  }
+
+  @Test
+  void dangerousWordAsPartOfIdentifierIsIgnored() {
+    // PROJECT_START_DATE contains START but is not the START keyword
+    assertDoesNotThrow(() -> SqlSecurityValidator.validate(
+        "SELECT PROJECT_START_DATE FROM SAMPLE.PROJECT", SecurityConfig.DEFAULTS));
+  }
+
+  @Test
+  void forbiddenKeywordsApplyEvenWhenWritable() {
+    SecurityConfig config = new SecurityConfig(false, null, List.of("TRUNCATE"));
+    assertThrows(SecurityException.class, () -> SqlSecurityValidator.validate(
+        "TRUNCATE TABLE T", config));
+  }
+
+  @Test
+  void maxQueryLengthEnforced() {
+    SecurityConfig config = new SecurityConfig(null, 20, null);
+    assertThrows(SecurityException.class, () -> SqlSecurityValidator.validate(
+        "SELECT 'way too long for the limit' FROM SYSIBM.SYSDUMMY1", config));
+  }
+}
