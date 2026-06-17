@@ -6,7 +6,7 @@ defined declaratively in YAML — using the same tool schema as the official
 against Db2 for i through [Mapepire](https://mapepire-ibmi.github.io/).
 
 This is an **intern starter project**: a working MVP with a deliberately small core and a
-[documented roadmap](docs/intern-roadmap.md) of features to build next. It is not a
+[documented roadmap](docs/roadmap.md) of features to build next. It is not a
 replacement for the official server.
 
 ```
@@ -167,4 +167,4 @@ runtime gap on IBM i** — the one open blocker for running the server on the sy
 This MVP implements a faithful subset of the reference server. HTTP transport, connection
 pooling, markdown result formatting, multi-file YAML merge, hot reload, the full SQL
 security parser, and more are catalogued — with pointers into the reference
-implementation — in [docs/intern-roadmap.md](docs/intern-roadmap.md).
+implementation — in [docs/roadmap.md](docs/roadmap.md).

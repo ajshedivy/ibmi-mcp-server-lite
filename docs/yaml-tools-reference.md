@@ -4,7 +4,7 @@ This server implements a subset of the
 [IBM i MCP Server](https://github.com/IBM/ibmi-mcp-server) YAML tool schema. A YAML file
 has up to three sections; at least one must be present. Fields marked *(parsed, ignored)*
 are accepted for compatibility but not yet implemented — see
-[intern-roadmap.md](intern-roadmap.md).
+[roadmap.md](roadmap.md).
 
 ## Environment interpolation
 

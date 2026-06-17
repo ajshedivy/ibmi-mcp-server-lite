@@ -1,4 +1,4 @@
-# Intern roadmap
+# Roadmap
 
 The MVP is intentionally small. Each item below is scoped, ordered roughly by
 difficulty, and points at the reference implementation

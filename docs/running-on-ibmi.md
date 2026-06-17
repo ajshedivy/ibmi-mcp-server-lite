@@ -81,7 +81,7 @@ Practical consequences:
   (e.g. a cert for `common1.frankeni.com` rejects `common1.iinthecloud.com`).
 - Fixing this properly means overriding `onSetSSLParameters` in mapepire-java's
   WebSocket client when `rejectUnauthorized=false` — a good upstream contribution
-  (see the intern roadmap).
+  (see the roadmap).
 
 ## RPM packaging skeleton
 
@@ -99,7 +99,7 @@ itself ships a fat jar + zip from GitHub Actions and is RPM-packaged by IBM inte
 The workflow is inert until the `ENABLE_IBMI_RPM_BUILD` repository variable is set and
 the `IBMI_BUILD_SYS` / `IBMI_BUILD_USRPRF` / `IBMI_BUILD_PVTKEY` secrets exist. The spec
 (`packaging/rpm/ibmi-mcp-server-lite.spec`) is `noarch`, installs under
-`/QOpenSys/pkgs/{bin,lib}` + `/QOpenSys/etc`, and carries INTERN TODO markers (most
+`/QOpenSys/pkgs/{bin,lib}` + `/QOpenSys/etc`, and carries TODO markers (most
 importantly the Java 17 `Requires`). A Service Commander unit
 (`packaging/ibmi/service-commander-def.yaml`) is included for when the HTTP transport
 exists — stdio servers are spawned per-client and don't need a daemon manager.
