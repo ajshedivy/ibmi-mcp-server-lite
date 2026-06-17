@@ -26,7 +26,7 @@ import io.modelcontextprotocol.spec.McpSchema.ToolAnnotations;
 /**
  * Builds the MCP server over stdio and registers every selected YAML tool.
  *
- * <p>INTERN TODO: Streamable HTTP transport
+ * <p>TODO: Streamable HTTP transport
  * ({@code HttpServletStreamableServerTransportProvider} in mcp-core) behind a
  * {@code --transport http} flag, mirroring the reference server.
  */

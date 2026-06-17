@@ -1,7 +1,7 @@
 # Build/install targets consumed by the RPM spec (%make_build / %make_install),
 # following the ServiceCommander-IBMi pattern for Java Maven RPMs on IBM i.
 #
-# INTERN TODO: JAVA_HOME points at openjdk-11 (the only JDK in IBM's yum repo
+# TODO: JAVA_HOME points at openjdk-11 (the only JDK in IBM's yum repo
 # today) but the MCP Java SDK needs 17 — see docs/running-on-ibmi.md.
 
 VERSION ?= 0.1.0

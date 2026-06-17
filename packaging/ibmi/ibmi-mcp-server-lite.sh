@@ -5,7 +5,7 @@
 # required for well-behaved stdin/stdout on IBM i (same set mapepire uses) —
 # essential here because MCP stdio framing runs over stdin/stdout.
 #
-# INTERN TODO: point JAVA at a Java 17 runtime once one is available on the
+# TODO: point JAVA at a Java 17 runtime once one is available on the
 # system (see docs/running-on-ibmi.md).
 JAVA=${JAVA:-/QOpenSys/pkgs/lib/jvm/openjdk-11/bin/java}
 

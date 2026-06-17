@@ -14,7 +14,7 @@ import com.ibm.ibmi.mcp.config.SecurityConfig;
  * <p>This MVP uses the reference server's regex fallback strategy: string literals are
  * stripped, then the statement must start with SELECT or WITH and must not contain a
  * dangerous keyword. The reference implementation's primary path uses a full Db2 SQL
- * tokenizer/parser (vscode-db2i) — porting that is an INTERN TODO.
+ * tokenizer/parser (vscode-db2i) — porting that is a TODO.
  */
 public final class SqlSecurityValidator {
 

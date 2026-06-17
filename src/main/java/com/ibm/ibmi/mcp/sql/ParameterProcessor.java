@@ -26,7 +26,7 @@ import com.ibm.ibmi.mcp.config.SqlToolConfig;
  *       per occurrence.
  * </ul>
  *
- * <p>INTERN TODO: the reference server also supports purely positional ({@code ?}) and
+ * <p>TODO: the reference server also supports purely positional ({@code ?}) and
  * hybrid statements, plus a "direct substitution" mode where a statement consisting of
  * exactly {@code :param} executes the parameter value as the SQL text (used by
  * {@code execute_sql}). Those modes are not implemented here.

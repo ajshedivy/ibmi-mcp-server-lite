@@ -34,7 +34,7 @@ import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
  * {@code {success, data, metadata:{toolName, rowCount, executionTime, columns, ...}}} —
  * returned both as a JSON text block and as MCP {@code structuredContent}.
  *
- * <p>INTERN TODO: {@code responseFormat: markdown} table rendering, fetchAllRows
+ * <p>TODO: {@code responseFormat: markdown} table rendering, fetchAllRows
  * pagination via {@code fetchMore()}, and registering an {@code outputSchema}.
  */
 public final class SqlToolHandler

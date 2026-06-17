@@ -15,7 +15,7 @@ import io.github.mapepire_ibmi.types.DaemonServer;
  * Owns one lazily-connected Mapepire {@link SqlJob} per YAML source.
  *
  * <p>A single job serializes queries against that source — fine for an MVP.
- * INTERN TODO: replace with {@code io.github.mapepire_ibmi.Pool} for concurrent tool
+ * TODO: replace with {@code io.github.mapepire_ibmi.Pool} for concurrent tool
  * calls, add reconnect-on-failure, and honor {@code jdbc-options} from the YAML source.
  */
 public final class SourceManager implements AutoCloseable {

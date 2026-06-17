@@ -6,7 +6,7 @@
 # there. mapepire-server itself publishes a fat jar + zip from ubuntu-latest and
 # deploys with @ibm/ibmi-ci; the RPM in IBM's yum repo is built by IBM internally.
 #
-# INTERN TODO before enabling (set repository variable ENABLE_IBMI_RPM_BUILD=true):
+# TODO before enabling (set repository variable ENABLE_IBMI_RPM_BUILD=true):
 #   1. Provision a build IBM i partition with: rpmbuild, rsync, maven, a Java 17
 #      runtime (see docs/running-on-ibmi.md — openjdk-17 is NOT yet in IBM's yum
 #      repo), ca-certificates-mozilla.
@@ -71,7 +71,7 @@ jobs:
           name: ibmi-rpm
           path: RPMS/**/*.rpm
 
-      # INTERN TODO (release path): on tag builds, attach the RPM to a GitHub
+      # TODO (release path): on tag builds, attach the RPM to a GitHub
       # Release (softprops/action-gh-release) and optionally push to a yum repo.
 
       - name: Cleanup remote build dir

@@ -8,7 +8,7 @@
 #   - Files are owned by qsys with group *none (there is no root on IBM i).
 #   - BuildArch is noarch: this package ships only a jar + scripts.
 #
-# INTERN TODO:
+# TODO:
 #   - Java 17 runtime: IBM's yum repo currently ships openjdk-11 only, and the
 #     MCP Java SDK needs 17+. Options: wait for an openjdk-17/21 RPM, require
 #     IBM Semeru Runtime Certified Edition 17 (5770-JV1), or downlevel the
@@ -28,12 +28,12 @@ BuildArch: noarch
 BuildRequires: ca-certificates-mozilla
 BuildRequires: make-gnu
 BuildRequires: maven
-# INTERN TODO: replace with the Java 17 runtime package once available.
+# TODO: replace with the Java 17 runtime package once available.
 BuildRequires: openjdk-11
 
 Requires: bash
 Requires: coreutils-gnu
-# INTERN TODO: replace with the Java 17 runtime package once available.
+# TODO: replace with the Java 17 runtime package once available.
 Requires: openjdk-11
 
 Source0: https://github.com/IBM/ibmi-mcp-server/archive/refs/tags/v%{version}.tar.gz#/%{name}-%{version}.tar.gz
@@ -69,4 +69,4 @@ fi
 
 %changelog
 * Wed Jun 10 2026 IBM i MCP intern project <noreply@ibm.com> - 0.1.0-0
-- Initial skeleton package (not yet buildable; see INTERN TODOs above)
+- Initial skeleton package (not yet buildable; see TODOs above)

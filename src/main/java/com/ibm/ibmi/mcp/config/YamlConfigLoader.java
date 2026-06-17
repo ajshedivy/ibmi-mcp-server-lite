@@ -30,7 +30,7 @@ import org.yaml.snakeyaml.constructor.SafeConstructor;
  *       {@code statement}.
  * </ul>
  *
- * <p>INTERN TODO: the reference server also accepts a directory or glob of YAML files and
+ * <p>TODO: the reference server also accepts a directory or glob of YAML files and
  * merges them (env-controlled duplicate handling), and hot-reloads on change
  * ({@code YAML_AUTO_RELOAD}). This MVP loads a single file only.
  */
