@@ -6,8 +6,10 @@ and running on your machine and covers the conventions we expect in a pull reque
 This is a minimal Java reimplementation of a **subset** of the
 [IBM i MCP Server](https://github.com/IBM/ibmi-mcp-server) (Node.js). That server is the
 behavioral contract: when something here is ambiguous, match it. Features we have
-deliberately left for later are catalogued in [docs/roadmap.md](docs/roadmap.md) — start
-there if you're looking for something to build.
+deliberately left for later are sequenced into milestones in the [**roadmap**](ROADMAP.md)
+and tracked as [GitHub issues](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues) —
+a [good first issue](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues?q=is%3Aopen+label%3A%22good+first+issue%22)
+is the place to start.
 
 ## Prerequisites
 
@@ -88,9 +90,10 @@ One pipeline, one package per stage under `src/main/java/com/ibm/ibmi/mcp/`:
 | `mapepire` | One lazy `SqlJob` per source (`SourceManager`) |
 | `server` | MCP server construction, tool registration, call handling |
 
-Supporting material: `tools/` (sample YAML), `scripts/` (smoke test), `docs/` (YAML
-reference, IBM i deployment, roadmap, and `docs/research/` notes on the reference
-semantics), `packaging/` + `Makefile` (the IBM i RPM skeleton).
+Supporting material: [`ROADMAP.md`](ROADMAP.md) (milestones + linked issues), `tools/`
+(sample YAML), `scripts/` (smoke test), `docs/` (YAML reference, IBM i deployment, and
+`docs/research/` notes on the reference semantics), `packaging/` + `Makefile` (the IBM i
+RPM skeleton).
 
 [AGENTS.md](AGENTS.md) (symlinked as `CLAUDE.md`) is the condensed architecture and
 constraints reference for AI coding agents — it's a good quick map of the codebase for
@@ -122,5 +125,5 @@ A few things that will come up in review:
   (e.g. `feat: connection pooling`, `docs: fix roadmap link`). See `git log` for the
   established style.
 - Make sure `./mvnw package` is green before opening a PR.
-- If you implement something from [docs/roadmap.md](docs/roadmap.md), remove it from the
-  roadmap in the same PR.
+- Working from the [roadmap](ROADMAP.md)? Reference its issue in your PR (e.g. `Closes #12`)
+  so the milestone updates automatically when it merges.

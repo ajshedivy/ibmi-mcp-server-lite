@@ -13,9 +13,9 @@ is the behavioral contract, and a sibling clone usually lives at `../ibmi-mcp-se
 
 **When semantics are ambiguous, match the reference server.** The distilled contract
 (env interpolation rules, parameter optionality, security defaults, output shape) is in
-`docs/research/yaml-schema-contract.md`; deliberately unimplemented features are
-catalogued in `docs/roadmap.md` — check it before adding a feature, and update it
-if you implement one.
+`docs/research/yaml-schema-contract.md`; deliberately unimplemented features are sequenced
+into milestones in `ROADMAP.md` and tracked as GitHub issues — check there before adding a
+feature, and close the corresponding issue if you implement one.
 
 ## Commands
 
