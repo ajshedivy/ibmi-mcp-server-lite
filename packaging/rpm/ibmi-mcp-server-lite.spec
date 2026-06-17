@@ -68,5 +68,5 @@ fi
 %config(noreplace) %{_sysconfdir}/sc/services/%{name}.yaml
 
 %changelog
-* Wed Jun 10 2026 IBM i MCP intern project <noreply@ibm.com> - 0.1.0-0
+* Wed Jun 10 2026 IBM i MCP project <noreply@ibm.com> - 0.1.0-0
 - Initial skeleton package (not yet buildable; see TODOs above)

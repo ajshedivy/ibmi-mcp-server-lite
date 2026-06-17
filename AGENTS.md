@@ -8,7 +8,7 @@ This file provides guidance to AI coding agents (Claude Code, and others via the
 A minimal Java 17 MCP server for IBM i that implements a faithful **subset** of the
 [IBM i MCP Server](https://github.com/IBM/ibmi-mcp-server) (Node.js) YAML tool schema.
 Tools are declarative SQL defined in YAML; execution goes to Db2 for i over Mapepire
-(mapepire-java). This is an intern starter project — the reference Node implementation
+(mapepire-java). This is a starter project — the reference Node implementation
 is the behavioral contract, and a sibling clone usually lives at `../ibmi-mcp-server`.
 
 **When semantics are ambiguous, match the reference server.** The distilled contract

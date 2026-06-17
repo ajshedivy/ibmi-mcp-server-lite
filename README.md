@@ -5,7 +5,7 @@ defined declaratively in YAML — using the same tool schema as the official
 [IBM i MCP Server](https://github.com/IBM/ibmi-mcp-server) (Node.js) — and execute SQL
 against Db2 for i through [Mapepire](https://mapepire-ibmi.github.io/).
 
-This is an **intern starter project**: a working MVP with a deliberately small core and a
+This is a **starter project**: a working MVP with a deliberately small core and a
 [documented roadmap](docs/roadmap.md) of features to build next. It is not a
 replacement for the official server.
 
