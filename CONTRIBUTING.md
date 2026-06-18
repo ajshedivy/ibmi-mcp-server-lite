@@ -19,7 +19,8 @@ is the place to start.
 - **An IBM i with the [Mapepire daemon](https://mapepire-ibmi.github.io/guides/sysadmin/)**
   running (default port 8076). Only needed to run the server against a real system — the
   unit tests need no IBM i.
-- **Python 3** — only for the end-to-end smoke test (`scripts/smoke-test.py`).
+- **Python 3** — for the end-to-end smoke test (`scripts/smoke-test.py`) and the
+  `sandbox/mcp-cli` client (which uses [`uv`](https://docs.astral.sh/uv/)).
 
 ## Get it building
 
@@ -77,6 +78,29 @@ python3 scripts/smoke-test.py
 
 To drive it from an MCP client (Claude Desktop, an IDE, an agent), see the
 [README](README.md#using-it-from-an-mcp-client) for an example `mcpServers` config.
+
+### Poke at it with the CLI
+
+`sandbox/mcp-cli/` is a tiny Python MCP client (FastMCP) for exercising the server by
+hand — handy when adding a tool or checking a YAML change. It spawns the jar over stdio
+and reads the lite `.env` for credentials, so you just need the jar built and
+[`uv`](https://docs.astral.sh/uv/) installed.
+
+```bash
+cd sandbox/mcp-cli
+uv sync                                            # one-time: create the venv
+
+uv run ibmi-mcp list                               # list tools + parameters
+uv run ibmi-mcp call active_job_info limit=3       # run a tool (name=value args)
+uv run ibmi-mcp call list_user_libraries library_pattern=QSYS%
+uv run ibmi-mcp call active_job_info limit=3 --json   # raw JSON result (pipe to jq)
+
+uv run ibmi-mcp list --tools /path/to/other-tools.yaml   # load a different tools file
+```
+
+Argument values are coerced from each tool's input schema; exit codes are `0` ok /
+`1` tool error / `2` usage. See [sandbox/mcp-cli/README.md](sandbox/mcp-cli/README.md)
+for the full flag reference.
 
 ## Project layout
 

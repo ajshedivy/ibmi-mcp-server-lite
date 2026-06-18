@@ -1,0 +1,19 @@
+[project]
+name = "mcp-cli"
+version = "0.1.0"
+description = "Minimal FastMCP client CLI for testing the ibmi-mcp-server-lite MCP server"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "fastmcp>=2.3.0",
+]
+
+[project.scripts]
+ibmi-mcp = "ibmi_mcp_client.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ibmi_mcp_client"]
