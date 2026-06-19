@@ -50,6 +50,7 @@ public final class Main {
     String toolsetsCsv = System.getenv("SELECTED_TOOLSETS");
     String envFile = ".env";
     boolean listToolsets = false;
+    boolean listTools = false;
 
     for (int i = 0; i < args.length; i++) {
       switch (args[i]) {
@@ -57,6 +58,7 @@ public final class Main {
         case "-ts", "--toolsets" -> toolsetsCsv = requireValue(args, ++i, "--toolsets");
         case "--env-file" -> envFile = requireValue(args, ++i, "--env-file");
         case "--list-toolsets" -> listToolsets = true;
+        case "--list-tools" -> listTools = true;
         case "--version" -> {
           System.out.println(McpServerRunner.SERVER_NAME + " " + McpServerRunner.SERVER_VERSION);
           return;
@@ -85,6 +87,11 @@ public final class Main {
       return;
     }
 
+    if (listTools) { 
+      printTools(config); 
+      return; 
+    }
+
     Set<String> selected = new LinkedHashSet<>();
     if (toolsetsCsv != null && !toolsetsCsv.isBlank()) {
       Arrays.stream(toolsetsCsv.split(",")).map(String::trim)
@@ -109,6 +116,40 @@ public final class Main {
           ts.title() != null ? " — " + ts.title() : "");
       ts.tools().forEach(tool -> System.out.println("  - " + tool));
     }
+  }
+
+  private static void printTools(ToolsConfig config) {
+    if (config.tools().isEmpty()) {
+      System.out.println("No tools defined.");
+      return;
+    }
+    for (SqlToolConfig tool : config.tools().values()) {
+      if (!tool.enabled()) continue;
+      System.out.printf("%s - %d parameters - %s%n", tool.name(), tool.parameters().size(), tool.description());
+      List<String> toolsets = config.toolsetsForTool(tool.name());
+      if (toolsets.isEmpty()) {
+        System.out.println("  toolsets: -");
+      } else {
+        System.out.println("  toolsets: " + String.join(", ", toolsets));
+      }
+      System.out.print(formatParameters(tool.parameters()));
+    }
+  }
+
+  private static String formatParameters(List<ParameterConfig> parameters) {
+    if (parameters.isEmpty()) {
+     return "  (no parameters)\n";
+    }
+    StringBuilder sb = new StringBuilder();
+    for (ParameterConfig p : parameters) {
+      sb.append("  ").append(p.name()).append(" (").append(p.type()).append(")");
+      if (p.isRequiredInSchema()) sb.append(" [required]");
+      if (p.defaultValue() != null) sb.append(" default: ").append(p.defaultValue());
+      if (p.enumValues() != null && !p.enumValues().isEmpty()) sb.append(" choices: " + String.join(", ", p.enumValues().stream().map(Object::toString).toList()));
+      if (p.description() != null) sb.append(" — ").append(p.description());
+      sb.append("\n");
+    }
+    return sb.toString();
   }
 
   private static String requireValue(String[] args, int index, String option) {
