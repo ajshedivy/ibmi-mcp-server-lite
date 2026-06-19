@@ -27,9 +27,11 @@ Close the gap between the lite server's JSON Schema / output handling and the re
 
 > **Why these together:** These are the starter/schema-area issues (markdown-response-format, enum-schema-parity, output-schema-registration are all 'starter'; list-tools-cli-flag is a 'starter' CLI warm-up) that touch the schema/ and server/ packages and need little or no live Db2 to test — the ideal first-issue onramp. server-side-input-validation is 'intermediate' but belongs here because it operates directly on the inputSchema constraints the other schema issues produce, so grouping it consolidates all schema/validation learning into one milestone. No issue here has a dependsOn, and none blocks the others, so interns can pick them up in parallel.
 
+**Implemented:**
+- ✅ [#1](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/1) — `--list-tools` CLI flag with tool/toolset/parameter formatting
+
 | # | Issue | Difficulty | Estimate |
 |---|---|---|---|
-| [#1](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/1) | [Add a --list-tools CLI flag to print each tool with its toolsets and parameter summaries](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/1) | 🟢 starter | S (1-2 days) |
 | [#2](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/2) | [Enum JSON Schema parity: emit const / anyOf-of-const and the "Must be one of:" description suffix](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/2) | 🟢 starter | S (1-2 days) |
 | [#3](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/3) | [Register StandardSqlToolOutput JSON Schema as each tool's MCP outputSchema](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/3) | 🟢 starter | S (1-2 days) |
 | [#4](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/4) | [Implement `responseFormat: markdown` rendering (tableFormat / maxDisplayRows)](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/4) | 🟢 starter | M (3-5 days) |
