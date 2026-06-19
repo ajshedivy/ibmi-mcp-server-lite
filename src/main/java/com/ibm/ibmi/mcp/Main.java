@@ -4,10 +4,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 
+import com.ibm.ibmi.mcp.config.ParameterConfig;
+import com.ibm.ibmi.mcp.config.SqlToolConfig;
 import com.ibm.ibmi.mcp.config.ToolsConfig;
 import com.ibm.ibmi.mcp.config.ToolsetConfig;
 import com.ibm.ibmi.mcp.config.YamlConfigLoader;
@@ -34,6 +37,7 @@ public final class Main {
         -t,  --tools <path>       Tools YAML file (env: TOOLS_YAML_PATH)
         -ts, --toolsets <a,b>     Only register tools in these toolsets (env: SELECTED_TOOLSETS)
              --list-toolsets      Print toolsets defined in the YAML file and exit
+             --list-tools         Print all tools defined in the YAML file and exit
              --env-file <path>    .env file for ${VAR} interpolation (default: ./.env)
              --version            Print version and exit
         -h,  --help               Show this help
