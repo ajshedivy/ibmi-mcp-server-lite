@@ -1,0 +1,82 @@
+package com.ibm.ibmi.mcp;
+
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.io.ByteArrayOutputStream;
+import java.io.PrintStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+class MainTest {
+
+  private final ByteArrayOutputStream outputStreamCaptor = new ByteArrayOutputStream();
+  private final PrintStream originalOut = System.out;
+
+  // A complete YAML fixture modeling a tool, a toolset, and a required parameter
+  private static final String TEST_YAML_FIXTURE = """
+      sources:
+        ibmi-system:
+          host: localhost
+          user: dummy
+          password: dummy
+      tools:
+        active_jobs:
+          source: ibmi-system
+          description: "Active jobs"
+          statement: SELECT * FROM TABLE(QSYS2.ACTIVE_JOB_INFO()) A WHERE JOB_NAME = :job_name
+          parameters:
+            - name: job_name
+              type: string
+              required: true
+              description: "Job name to filter"
+      toolsets:
+        performance:
+          title: "Performance"
+          tools:
+            - active_jobs
+      """;
+
+  @BeforeEach
+  void setUp() {
+    System.setOut(new PrintStream(outputStreamCaptor));
+  }
+
+  @AfterEach
+  void tearDown() {
+    System.setOut(originalOut);
+  }
+
+  @Test
+  void testMainListToolsFeatureWithoutCodeChanges(@TempDir Path tempDir) throws Exception {
+    // Write the test fixture string to a real temporary file location
+    // This ensures that the main method is able to read from a real file
+    Path tempYamlFile = tempDir.resolve("tools-test-fixture.yaml");
+    Files.writeString(tempYamlFile, TEST_YAML_FIXTURE);
+
+    // Prepare arguments mimicking command-line entry
+    String[] args = new String[] {
+        "--tools", tempYamlFile.toAbsolutePath().toString(),
+        "--list-tools"
+    };
+
+    // Execute the public main method directly
+    Main.main(args);
+
+    // Capture console printout and match requirements from instructions
+    String output = outputStreamCaptor.toString();
+
+    // Validates that it outputs the expected tool name
+    assertTrue(output.contains("active_jobs"), "Console output should contain the tool name");
+    
+    // Validates that it lists the associated toolset
+    assertTrue(output.contains("performance"), "Console output should contain the toolset context");
+    
+    // Validates that the parameter schema prints the [required] modifier
+    assertTrue(output.contains("[required]"), "Console output should contain the [required] parameter marker");
+  }
+}
