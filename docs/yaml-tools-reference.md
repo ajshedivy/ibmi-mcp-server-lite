@@ -67,6 +67,20 @@ parameters:
     itemType: string       # arrays: element type (default string)
 ```
 
+**Enum → JSON Schema** (non-boolean parameters only; `enum` replaces other type
+constraints such as `pattern`, `min`/`max`, and length limits):
+
+| `enum` values | Emitted schema |
+|---|---|
+| one value | `{"const": value}` |
+| all strings | `{"type":"string","enum":[...]}` |
+| numbers and/or mixed types | `{"anyOf":[{"const":v1},{"const":v2},...]}` |
+
+When `enum` is present, the parameter `description` sent to the LLM includes a
+`Must be one of: ...` suffix (string values single-quoted, others bare). If a
+description already exists, a period is added when it does not already end in
+`.`, `?`, or `!`.
+
 **Optionality rule** (matches the reference server): a parameter is *required* unless
 `required: false` is set **or** a `default` is provided. An optional parameter with no
 default binds as an empty string when omitted.
@@ -135,4 +149,3 @@ registers.
 - Simplified read-only validation (regex strategy only; the reference's primary path is
   a full SQL tokenizer/parser).
 - No `typescript_tools` section, no built-in tools (`execute_sql`, `generate_sql`).
-- Enum JSON Schema always uses `enum:` (the reference emits `const` for single values).
