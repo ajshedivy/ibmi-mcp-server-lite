@@ -4,10 +4,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 
+import com.ibm.ibmi.mcp.config.ParameterConfig;
+import com.ibm.ibmi.mcp.config.SqlToolConfig;
 import com.ibm.ibmi.mcp.config.ToolsConfig;
 import com.ibm.ibmi.mcp.config.ToolsetConfig;
 import com.ibm.ibmi.mcp.config.YamlConfigLoader;
@@ -34,6 +37,7 @@ public final class Main {
         -t,  --tools <path>       Tools YAML file (env: TOOLS_YAML_PATH)
         -ts, --toolsets <a,b>     Only register tools in these toolsets (env: SELECTED_TOOLSETS)
              --list-toolsets      Print toolsets defined in the YAML file and exit
+             --list-tools         Print all enabled tools defined in the YAML file and exit
              --env-file <path>    .env file for ${VAR} interpolation (default: ./.env)
              --version            Print version and exit
         -h,  --help               Show this help
@@ -50,6 +54,7 @@ public final class Main {
     String toolsetsCsv = System.getenv("SELECTED_TOOLSETS");
     String envFile = ".env";
     boolean listToolsets = false;
+    boolean listTools = false;
 
     for (int i = 0; i < args.length; i++) {
       switch (args[i]) {
@@ -57,6 +62,7 @@ public final class Main {
         case "-ts", "--toolsets" -> toolsetsCsv = requireValue(args, ++i, "--toolsets");
         case "--env-file" -> envFile = requireValue(args, ++i, "--env-file");
         case "--list-toolsets" -> listToolsets = true;
+        case "--list-tools" -> listTools = true;
         case "--version" -> {
           System.out.println(McpServerRunner.SERVER_NAME + " " + McpServerRunner.SERVER_VERSION);
           return;
@@ -85,6 +91,11 @@ public final class Main {
       return;
     }
 
+    if (listTools) { 
+      printTools(config); 
+      return; 
+    }
+
     Set<String> selected = new LinkedHashSet<>();
     if (toolsetsCsv != null && !toolsetsCsv.isBlank()) {
       Arrays.stream(toolsetsCsv.split(",")).map(String::trim)
@@ -109,6 +120,40 @@ public final class Main {
           ts.title() != null ? " — " + ts.title() : "");
       ts.tools().forEach(tool -> System.out.println("  - " + tool));
     }
+  }
+
+  private static void printTools(ToolsConfig config) {
+    if (config.tools().isEmpty()) {
+      System.out.println("No tools enabled.");
+      return;
+    }
+    for (SqlToolConfig tool : config.tools().values()) {
+      if (!tool.enabled()) continue;
+      System.out.printf("%s - %d parameters - %s%n", tool.name(), tool.parameters().size(), tool.description());
+      List<String> toolsets = config.toolsetsForTool(tool.name());
+      if (toolsets.isEmpty()) {
+        System.out.println("  toolsets: -");
+      } else {
+        System.out.println("  toolsets: " + String.join(", ", toolsets));
+      }
+      System.out.print(formatParameters(tool.parameters()));
+    }
+  }
+
+  private static String formatParameters(List<ParameterConfig> parameters) {
+    if (parameters.isEmpty()) {
+     return "  (no parameters)\n";
+    }
+    StringBuilder sb = new StringBuilder();
+    for (ParameterConfig p : parameters) {
+      sb.append("  ").append(p.name()).append(" (").append(p.type()).append(")");
+      if (p.isRequiredInSchema()) sb.append(" [required]");
+      if (p.defaultValue() != null) sb.append(" default: ").append(p.defaultValue());
+      if (p.enumValues() != null && !p.enumValues().isEmpty()) sb.append(" choices: " + String.join(", ", p.enumValues().stream().map(Object::toString).toList()));
+      if (p.description() != null) sb.append(" — ").append(p.description());
+      sb.append("\n");
+    }
+    return sb.toString();
   }
 
   private static String requireValue(String[] args, int index, String option) {
