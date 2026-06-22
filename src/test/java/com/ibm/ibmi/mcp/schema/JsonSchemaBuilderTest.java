@@ -171,6 +171,13 @@ class JsonSchemaBuilderTest {
   }
 
   @Test
+  void enumDescriptionSuffixPreservesExclamationMark() throws Exception {
+    JsonNode prop = schema(List.of(withEnum("dept", "string", "Required!", List.of("A", "B"))))
+        .get("properties").get("dept");
+    assertEquals("Required! Must be one of: 'A', 'B'", prop.get("description").asText());
+  }
+
+  @Test
   void enumDescriptionSuffixPreservesExistingPeriod() throws Exception {
     JsonNode prop = schema(List.of(withEnum("limit", "integer", "Already done.", List.of(1, 2))))
         .get("properties").get("limit");
