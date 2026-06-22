@@ -70,14 +70,48 @@ public final class JsonSchemaBuilder {
     ObjectNode prop = hasEnum(param)
         ? buildEnumProperty(param.enumValues())
         : buildBaseTypeProperty(param);
-    if (param.description() != null) {
-      prop.put("description", param.description());
+
+    String description = hasEnum(param) ? buildDescription(param) : param.description();
+   
+    if (description != null) {
+      prop.put("description", description);
     }
     if (param.defaultValue() != null) {
       prop.set("default", mapper.valueToTree(param.defaultValue()));
     }
     return prop;
   }
+
+  /**
+ * Builds the parameter description with a "Must be one of: ..." suffix when enum values
+ * are present.
+ */
+private static String buildDescription(ParameterConfig param) {
+  String formattedValues = param.enumValues().stream()
+      .map(JsonSchemaBuilder::formatEnumValueForDescription)
+      .reduce((a, b) -> a + ", " + b)
+      .orElse("");
+
+  String enumClause = "Must be one of: " + formattedValues;
+
+  String base = param.description();
+  if (base == null || base.isBlank()) {
+    return enumClause;
+  }
+
+  String result = base.trim();
+  if (!result.endsWith(".") && !result.endsWith("?") && !result.endsWith("!")) {
+    result += ".";
+  }
+  return result + " " + enumClause;
+}
+
+private static String formatEnumValueForDescription(Object value) {
+  if (value instanceof String s) {
+    return "'" + s + "'";
+  }
+  return String.valueOf(value);
+}
 
   /** Returns {@code true} when the parameter has enum values (ignored for booleans). */
   private static boolean hasEnum(ParameterConfig param) {
