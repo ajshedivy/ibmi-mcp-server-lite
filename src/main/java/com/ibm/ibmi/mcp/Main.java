@@ -37,7 +37,7 @@ public final class Main {
         -t,  --tools <path>       Tools YAML file (env: TOOLS_YAML_PATH)
         -ts, --toolsets <a,b>     Only register tools in these toolsets (env: SELECTED_TOOLSETS)
              --list-toolsets      Print toolsets defined in the YAML file and exit
-             --list-tools         Print all tools defined in the YAML file and exit
+             --list-tools         Print all enabled tools defined in the YAML file and exit
              --env-file <path>    .env file for ${VAR} interpolation (default: ./.env)
              --version            Print version and exit
         -h,  --help               Show this help
