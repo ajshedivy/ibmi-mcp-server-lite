@@ -124,7 +124,7 @@ public final class Main {
 
   private static void printTools(ToolsConfig config) {
     if (config.tools().isEmpty()) {
-      System.out.println("No tools defined.");
+      System.out.println("No tools enabled.");
       return;
     }
     for (SqlToolConfig tool : config.tools().values()) {
