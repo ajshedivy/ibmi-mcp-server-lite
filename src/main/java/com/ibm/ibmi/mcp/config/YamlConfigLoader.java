@@ -128,6 +128,7 @@ public final class YamlConfigLoader {
           tool.get("annotations") == null ? Map.of() : asMap(tool.get("annotations"), "tool '" + name + "' annotations"),
           parseSecurity(name, tool.get("security")),
           tool.get("rowsToFetch") instanceof Number n ? n.intValue() : null,
+          tool.get("fetchAllRows") instanceof Boolean b ? b : null,
           getString(tool, "domain"),
           getString(tool, "category")));
     }

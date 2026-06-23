@@ -21,7 +21,7 @@ class ParameterProcessorTest {
 
   private static SqlToolConfig tool(String statement, ParameterConfig... params) {
     return new SqlToolConfig("test_tool", true, "src", "desc", statement,
-        List.of(params), null, Map.of(), SecurityConfig.DEFAULTS, null, null, null);
+        List.of(params), null, Map.of(), SecurityConfig.DEFAULTS, null, null, null, null);
   }
 
   @Test
