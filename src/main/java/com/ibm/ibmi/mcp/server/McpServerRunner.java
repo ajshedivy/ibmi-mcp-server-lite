@@ -70,11 +70,14 @@ public final class McpServerRunner {
         .capabilities(ServerCapabilities.builder().tools(true).logging().build())
         .build();
 
+    String outputSchema = schemaBuilder.buildOutputSchema();
+
     for (SqlToolConfig toolConfig : selected.values()) {
       Tool tool = Tool.builder()
           .name(toolConfig.name())
           .description(toolConfig.description())
           .inputSchema(jsonMapper, schemaBuilder.buildInputSchema(toolConfig.parameters()))
+          .outputSchema(jsonMapper, outputSchema)
           .annotations(buildAnnotations(toolConfig))
           .build();
       McpServerFeatures.SyncToolSpecification spec =

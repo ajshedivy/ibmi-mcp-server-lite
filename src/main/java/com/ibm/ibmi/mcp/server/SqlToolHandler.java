@@ -34,8 +34,8 @@ import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
  * {@code {success, data, metadata:{toolName, rowCount, executionTime, columns, ...}}} —
  * returned both as a JSON text block and as MCP {@code structuredContent}.
  *
- * <p>TODO: {@code responseFormat: markdown} table rendering, fetchAllRows
- * pagination via {@code fetchMore()}, and registering an {@code outputSchema}.
+ * <p>TODO: {@code responseFormat: markdown} table rendering and fetchAllRows
+ * pagination via {@code fetchMore()}.
  */
 public final class SqlToolHandler
     implements BiFunction<McpSyncServerExchange, CallToolRequest, CallToolResult> {
