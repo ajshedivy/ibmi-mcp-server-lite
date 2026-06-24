@@ -47,7 +47,7 @@ tools:
 ```
 
 *(parsed, ignored)*: `responseFormat`, `domain`, `category`. Markdown formatting,
-`tableFormat`, `maxDisplayRows`, and `fetchAllRows` are roadmap items.
+`tableFormat` and `maxDisplayRows` are roadmap items.
 
 ### `parameters`
 
