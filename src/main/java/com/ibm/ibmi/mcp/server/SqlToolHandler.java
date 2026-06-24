@@ -124,27 +124,28 @@ public final class SqlToolHandler
    * @return accumulated result with truncation flag
    */
   private PaginatedResult executePaginatedQuery(Query query) throws Exception {
-    // Fetch first page
-    QueryResult<Object> result = query.<Object>execute(SqlToolConfig.DEFAULT_PAGE_SIZE).get();
-    List<Object> accumulated = new ArrayList<>(result.getData() != null ? result.getData() : List.of());
+    // Fetch first page - preserve this for column metadata
+    QueryResult<Object> firstResult = query.<Object>execute(SqlToolConfig.DEFAULT_PAGE_SIZE).get();
+    QueryResult<Object> lastResult = firstResult;
+    List<Object> accumulated = new ArrayList<>(firstResult.getData() != null ? firstResult.getData() : List.of());
     
     // Paginate while more data exists and under the limit
-    while (!result.getIsDone() && accumulated.size() < SqlToolConfig.MAX_PAGINATION_ROWS) {
-      result = query.<Object>fetchMore(SqlToolConfig.DEFAULT_PAGE_SIZE).get();
-      if (result.getData() != null) {
-        accumulated.addAll(result.getData());
+    while (!lastResult.getIsDone() && accumulated.size() < SqlToolConfig.MAX_PAGINATION_ROWS) {
+      lastResult = query.<Object>fetchMore(SqlToolConfig.DEFAULT_PAGE_SIZE).get();
+      if (lastResult.getData() != null) {
+        accumulated.addAll(lastResult.getData());
       }
     }
     
     // Determine if results were truncated
-    boolean truncated = !result.getIsDone() || accumulated.size() >= SqlToolConfig.MAX_PAGINATION_ROWS;
+    boolean truncated = !lastResult.getIsDone() || accumulated.size() > SqlToolConfig.MAX_PAGINATION_ROWS;
     
     // Hard-clip to MAX_PAGINATION_ROWS
     if (accumulated.size() > SqlToolConfig.MAX_PAGINATION_ROWS) {
       accumulated = accumulated.subList(0, SqlToolConfig.MAX_PAGINATION_ROWS);
     }
     
-    return new PaginatedResult(result, accumulated, truncated);
+    return new PaginatedResult(firstResult, accumulated, truncated);
   }
 
 
@@ -197,6 +198,8 @@ public final class SqlToolHandler
       metadata.put("truncated", true);
       log.warn("Tool '{}' result truncated at {} rows (query returned more data than MAX_PAGINATION_ROWS)",
           tool.name(), SqlToolConfig.MAX_PAGINATION_ROWS);
+    } else {
+      metadata.put("truncated", false);
     }
 
     Map<String, Object> output = new LinkedHashMap<>();

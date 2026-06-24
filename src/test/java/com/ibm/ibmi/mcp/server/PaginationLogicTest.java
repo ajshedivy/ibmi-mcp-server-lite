@@ -44,7 +44,7 @@ class PaginationLogicTest {
     }
     
     // Compute truncated flag
-    boolean truncated = !isDone || accumulated.size() >= SqlToolConfig.MAX_PAGINATION_ROWS;
+    boolean truncated = !isDone || accumulated.size() > SqlToolConfig.MAX_PAGINATION_ROWS;
     
     // Hard-clip to MAX_PAGINATION_ROWS
     if (accumulated.size() > SqlToolConfig.MAX_PAGINATION_ROWS) {
