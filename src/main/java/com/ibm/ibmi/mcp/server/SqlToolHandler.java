@@ -123,6 +123,9 @@ public final class SqlToolHandler
       try {
         query.close().get();
       } catch (Exception e) {
+        if (MapepireFailures.isConnectionLevel(e)) {
+          sources.evictPool(tool.source());
+        }
         log.warn("Failed to close query for tool '{}': {}", tool.name(), e.getMessage());
       }
     }

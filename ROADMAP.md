@@ -33,7 +33,6 @@ Close the gap between the lite server's JSON Schema / output handling and the re
 - ✅ [#3](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/3) — Register StandardSqlToolOutput JSON Schema as each tool's MCP outputSchema
 - ✅ [#4](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/4) — Implement `responseFormat: markdown` rendering (tableFormat / maxDisplayRows)
 - ✅ [#5](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/5) — Enforce parameter constraints (pattern / enum / min / max / length) server-side at call time
-- ✅ [#6](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/6) - Connection pooling: replace the single SqlJob per source with mapepire Pool
 
 ## M2 — Runtime Robustness
 
@@ -44,6 +43,7 @@ Make the execution and connection layers production-grade: a real connection poo
 > **Why these together:** This milestone hardens the mapepire/ and sql-execution path that M1's correct outputs now flow through. connection-pooling is the natural anchor (it reshapes SourceManager); jdbc-options-passthrough and graceful-shutdown both operate on the same SqlJob/source lifecycle, so co-locating them avoids merge churn across the connection layer; pagination-fetch-all-rows extends the execution loop. These are the 'intermediate' connection/execution/lifecycle issues that require a live Mapepire to fully validate — a reasonable step up once interns have shipped M1. No dependsOn constraints, but ordering pooling first reduces rework for the others.
 
 **Implemented:**
+- ✅ [#6](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/6) — Connection pooling: replace the single SqlJob per source with mapepire Pool
 - ✅ [#8](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/8) — Implement fetchAllRows pagination with a row-count safety cap and a `truncated` flag
 - ✅ [#7](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/7) — Pass YAML `jdbc-options` (and `DB2i_JDBC_OPTIONS`) through to mapepire `SqlJob`
 
