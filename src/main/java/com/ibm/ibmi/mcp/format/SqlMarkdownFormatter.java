@@ -103,8 +103,9 @@ public final class SqlMarkdownFormatter {
     List<List<String>> tableRows = new ArrayList<>();
     for (Map<String, Object> row : displayRows) {
       List<String> tableRow = new ArrayList<>();
-      for (Map<String, Object> col : columns) {
-        String colName = col.get("name").toString();
+      for (int i = 0; i < columns.size(); i++) {
+        Map<String, Object> col = columns.get(i);
+        String colName = stringOrDefault(col.get("name"), "column_" + i);
         Object value = row.get(colName);
         tableRow.add(value == null ? null : String.valueOf(value));
       }
