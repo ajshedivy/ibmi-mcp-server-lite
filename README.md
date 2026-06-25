@@ -162,8 +162,8 @@ runtime gap on IBM i** — the one open blocker for running the server on the sy
 ## What's deliberately missing
 
 This MVP implements a faithful subset of the reference server. HTTP transport, connection
-pooling, markdown result formatting, multi-file YAML merge, hot reload, the full SQL
-security parser, and more are sequenced into milestones — each tracked as a GitHub issue
+pooling, multi-file YAML merge, hot reload, the full SQL security parser, and more are
+sequenced into milestones — each tracked as a GitHub issue
 with pointers into the reference implementation — in the [**roadmap**](ROADMAP.md)
 ([milestones](https://github.com/ajshedivy/ibmi-mcp-server-lite/milestones) ·
 [good first issues](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues?q=is%3Aopen+label%3A%22good+first+issue%22)).
