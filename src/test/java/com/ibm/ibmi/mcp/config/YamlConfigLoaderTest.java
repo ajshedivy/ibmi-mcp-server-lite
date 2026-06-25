@@ -62,6 +62,8 @@ class YamlConfigLoaderTest {
     assertEquals("secret", source.password());
     assertEquals(8076, source.port());
     assertTrue(source.ignoreUnauthorized());
+    assertEquals(SourceConfig.DEFAULT_MAX_SIZE, source.maxSize());
+    assertEquals(SourceConfig.DEFAULT_STARTING_SIZE, source.startingSize());
 
     assertEquals(3, config.tools().size());
     SqlToolConfig tool = config.tools().get("active_jobs");
@@ -131,6 +133,27 @@ class YamlConfigLoaderTest {
             tools: [nope]
         """;
     assertThrows(ConfigException.class, () -> loader.parse(yaml));
+  }
+
+  @Test
+  void parsesSourcePoolSizeKeys() {
+    String yaml = """
+        sources:
+          ibmi-system:
+            host: h
+            user: u
+            password: p
+            max-size: 5
+            starting-size: 1
+        tools:
+          t:
+            source: ibmi-system
+            description: d
+            statement: SELECT 1 FROM SYSIBM.SYSDUMMY1
+        """;
+    SourceConfig source = loader.parse(yaml).sources().get("ibmi-system");
+    assertEquals(5, source.maxSize());
+    assertEquals(1, source.startingSize());
   }
 
   @Test
