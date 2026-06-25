@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.List;
 import java.util.Map;
 
 import org.junit.jupiter.api.Test;
@@ -150,11 +151,85 @@ class YamlConfigLoaderTest {
   @Test
   void fetchAllRowsParsedCorrectly() {
     ToolsConfig config = loader.parse(SAMPLE);
-    
+
     SqlToolConfig systemStatus = config.tools().get("system_status");
     assertFalse(systemStatus.isFetchAll(), "system_status should not have fetchAllRows enabled");
-    
+
     SqlToolConfig activeJobs = config.tools().get("active_jobs");
     assertTrue(activeJobs.isFetchAll(), "active_jobs should have fetchAllRows enabled");
+  }
+
+  @Test
+  void absentJdbcOptionsBlockYieldsEmptyMap() {
+    ToolsConfig config = loader.parse(SAMPLE);
+    assertTrue(config.sources().get("ibmi-system").jdbcOptions().isEmpty());
+  }
+
+  @Test
+  void parsesJdbcOptionsArrayForm() {
+    String yaml = """
+        sources:
+          a:
+            host: h
+            user: u
+            password: p
+            jdbc-options:
+              libraries: [MYLIB, DEVDATA]
+              naming: system
+        tools:
+          t:
+            source: a
+            description: d
+            statement: SELECT 1 FROM SYSIBM.SYSDUMMY1
+        """;
+    SourceConfig source = loader.parse(yaml).sources().get("a");
+    assertEquals(List.of("MYLIB", "DEVDATA"), source.jdbcOptions().get("libraries"));
+    assertEquals("system", source.jdbcOptions().get("naming"));
+  }
+
+  @Test
+  void parsesJdbcOptionsCsvLibrariesForm() {
+    String yaml = """
+        sources:
+          a:
+            host: h
+            user: u
+            password: p
+            jdbc-options:
+              libraries: "MYLIB, DEVDATA"
+        tools:
+          t:
+            source: a
+            description: d
+            statement: SELECT 1 FROM SYSIBM.SYSDUMMY1
+        """;
+    SourceConfig source = loader.parse(yaml).sources().get("a");
+    assertEquals(List.of("MYLIB", "DEVDATA"), source.jdbcOptions().get("libraries"));
+  }
+
+  @Test
+  void envJdbcOptionsShallowMergeOverYaml() {
+    YamlConfigLoader envLoader = new YamlConfigLoader(Map.of(
+        "DB2i_JDBC_OPTIONS", "naming=system;libraries=MYLIB,DEVDATA"));
+    String yaml = """
+        sources:
+          a:
+            host: h
+            user: u
+            password: p
+            jdbc-options:
+              libraries: [OLDLIB]
+              naming: sql
+              date format: usa
+        tools:
+          t:
+            source: a
+            description: d
+            statement: SELECT 1 FROM SYSIBM.SYSDUMMY1
+        """;
+    Map<String, Object> opts = envLoader.parse(yaml).sources().get("a").jdbcOptions();
+    assertEquals(List.of("MYLIB", "DEVDATA"), opts.get("libraries"));
+    assertEquals("system", opts.get("naming"));
+    assertEquals("usa", opts.get("date format"));
   }
 }
