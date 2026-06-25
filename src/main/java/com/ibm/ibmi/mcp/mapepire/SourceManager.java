@@ -9,12 +9,12 @@ import org.slf4j.LoggerFactory;
 
 import com.ibm.ibmi.mcp.config.SourceConfig;
 
-import io.github.mapepire_ibmi.SqlJob;
+import io.github.mapepire_ibmi.Pool;
 import io.github.mapepire_ibmi.types.DaemonServer;
 import io.github.mapepire_ibmi.types.JDBCOptions;
 
 /**
- * Owns one lazily-connected Mapepire {@link SqlJob} per YAML source.
+ * Owns one lazily-initialized Mapepire {@link Pool} per YAML source.
  *
  * <p>A single job serializes queries against that source — fine for an MVP.
  * TODO: replace with {@code io.github.mapepire_ibmi.Pool} for concurrent tool
@@ -25,15 +25,15 @@ public final class SourceManager implements AutoCloseable {
   private static final Logger log = LoggerFactory.getLogger(SourceManager.class);
 
   private final Map<String, SourceConfig> sources;
-  private final Map<String, SqlJob> jobs = new ConcurrentHashMap<>();
+  private final Map<String, Pool> pools = new ConcurrentHashMap<>();
 
   public SourceManager(Map<String, SourceConfig> sources) {
     this.sources = sources;
   }
 
-  /** Returns a connected job for the named source, connecting on first use. */
-  public synchronized SqlJob getJob(String sourceName) throws Exception {
-    SqlJob existing = jobs.get(sourceName);
+  /** Returns an initialized pool for the named source, connecting on first use. */
+  public synchronized Pool getPool(String sourceName) throws Exception {
+    Pool existing = pools.get(sourceName);
     if (existing != null) {
       return existing;
     }
@@ -41,6 +41,30 @@ public final class SourceManager implements AutoCloseable {
     if (source == null) {
       throw new IllegalArgumentException("Unknown source: " + sourceName);
     }
+    PoolOptions options = poolOptionsFor(source);
+    Pool pool = new Pool(options);
+    log.info("Connecting pool to Mapepire at {}:{} as {} (max-size={}, starting-size={})",
+        source.host(), source.port(), source.user(), source.maxSize(), source.startingSize());
+    pool.init().get();
+    log.info("Connected pool for source '{}'", sourceName);
+    pools.put(sourceName, pool);
+    return pool;
+  }
+
+  /** Closes and removes a pool so the next {@link #getPool} call rebuilds it. */
+  public synchronized void evictPool(String sourceName) {
+    Pool pool = pools.remove(sourceName);
+    if (pool != null) {
+      try {
+        pool.end();
+        log.info("Evicted pool for source '{}'", sourceName);
+      } catch (Exception e) {
+        log.warn("Error ending pool for source '{}': {}", sourceName, e.getMessage());
+      }
+    }
+  }
+
+  static PoolOptions poolOptionsFor(SourceConfig source) {
     // Mapepire's flag is rejectUnauthorized — the inverse of YAML's ignore-unauthorized.
     DaemonServer server = new DaemonServer(
         source.host(), source.port(), source.user(), source.password(),
@@ -67,13 +91,13 @@ public final class SourceManager implements AutoCloseable {
 
   @Override
   public void close() {
-    jobs.forEach((name, job) -> {
+    pools.forEach((name, pool) -> {
       try {
-        job.close();
+        pool.end();
       } catch (Exception e) {
-        log.warn("Error closing job for source '{}': {}", name, e.getMessage());
+        log.warn("Error ending pool for source '{}': {}", name, e.getMessage());
       }
     });
-    jobs.clear();
+    pools.clear();
   }
 }
