@@ -43,6 +43,18 @@ class SqlToolHandlerFormatTest {
   }
 
   @Test
+  void explicitJsonFormatReturnsPrettyPrintedJson() throws Exception {
+    SqlToolConfig tool = toolWithFormat("json");
+    Map<String, Object> output = sampleOutput();
+
+    String text = SqlToolHandler.formatToolResult(tool, output, mapper);
+
+    assertTrue(text.trim().startsWith("{"));
+    assertTrue(text.contains("\"success\" : true"));
+    assertFalse(text.contains("[!TIP]"));
+  }
+
+  @Test
   void structuredContentShapeUnchangedRegardlessOfFormat() {
     Map<String, Object> output = sampleOutput();
     assertEquals(true, output.get("success"));
