@@ -16,6 +16,18 @@ import com.ibm.ibmi.mcp.config.SqlToolConfig;
  * parameterized query ({@code ?} markers + ordered values). No values are ever spliced
  * into the SQL text — binding is always parameterized, mirroring the reference server.
  *
+ * <p><b>Processing order:</b>
+ * <ol>
+ *   <li>Apply defaults for missing arguments
+ *   <li>Check required parameters
+ *   <li>Coerce to declared type (string, integer, float, boolean, array)
+ *   <li><b>Validate constraints</b> (min, max, minLength, maxLength, pattern, enum) via
+ *       {@link ParameterValidator} — violations throw {@link IllegalArgumentException}
+ *       before any SQL binding occurs
+ *   <li>Bind as {@code ?} markers in the SQL statement
+ * </ol>
+ *
+ * <p><b>Key behaviors:</b>
  * <ul>
  *   <li>Missing argument: use {@code default} if present; error if required; otherwise
  *       bind an empty string (reference behavior).
@@ -24,6 +36,9 @@ import com.ibm.ibmi.mcp.config.SqlToolConfig;
  *       element — for {@code IN (:list)} clauses.
  *   <li>A {@code :name} with the same name appearing multiple times binds the value once
  *       per occurrence.
+ *   <li>Constraint validation runs at call time, matching the reference server's Zod-based
+ *       validation. All declared constraints (enum, min/max, minLength/maxLength, pattern)
+ *       are enforced before SQL execution.
  * </ul>
  *
  * <p>TODO: the reference server also supports purely positional ({@code ?}) and
@@ -88,7 +103,10 @@ public final class ParameterProcessor {
         return ""; // reference behavior: optional with no default binds as empty string
       }
     }
-    return coerce(param, raw);
+    Object coerced = coerce(param, raw);
+    // Validate constraints after coercion but before binding
+    ParameterValidator.validate(param, coerced);
+    return coerced;
   }
 
   private static Object coerce(ParameterConfig param, Object value) {
