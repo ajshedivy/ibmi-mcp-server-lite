@@ -33,6 +33,7 @@ Close the gap between the lite server's JSON Schema / output handling and the re
 - ✅ [#3](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/3) — Register StandardSqlToolOutput JSON Schema as each tool's MCP outputSchema
 - ✅ [#4](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/4) — Implement `responseFormat: markdown` rendering (tableFormat / maxDisplayRows)
 - ✅ [#5](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/5) — Enforce parameter constraints (pattern / enum / min / max / length) server-side at call time
+- ✅ [#6](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/6) - Connection pooling: replace the single SqlJob per source with mapepire Pool
 
 ## M2 — Runtime Robustness
 
@@ -49,6 +50,7 @@ Make the execution and connection layers production-grade: a real connection poo
 | # | Issue | Difficulty | Estimate |
 |---|---|---|---|
 | [#6](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/6) | [Connection pooling: replace the single SqlJob per source with mapepire Pool](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/6) | 🟡 intermediate | M (3-5 days) |
+| [#7](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/7) | [Pass YAML jdbc-options (and DB2i_JDBC_OPTIONS) through to mapepire SqlJob](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/7) | 🟡 intermediate | M (3-5 days) |
 | [#9](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/9) | [Graceful shutdown: exit when stdin closes and clean up in-flight queries + SqlJobs](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/9) | 🟡 intermediate | S (1-2 days) |
 
 ## M3 — Configuration Lifecycle
