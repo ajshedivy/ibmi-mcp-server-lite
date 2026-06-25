@@ -1,5 +1,6 @@
 package com.ibm.ibmi.mcp.mapepire;
 
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -10,13 +11,14 @@ import com.ibm.ibmi.mcp.config.SourceConfig;
 
 import io.github.mapepire_ibmi.SqlJob;
 import io.github.mapepire_ibmi.types.DaemonServer;
+import io.github.mapepire_ibmi.types.JDBCOptions;
 
 /**
  * Owns one lazily-connected Mapepire {@link SqlJob} per YAML source.
  *
  * <p>A single job serializes queries against that source — fine for an MVP.
  * TODO: replace with {@code io.github.mapepire_ibmi.Pool} for concurrent tool
- * calls, add reconnect-on-failure, and honor {@code jdbc-options} from the YAML source.
+ * calls and add reconnect-on-failure.
  */
 public final class SourceManager implements AutoCloseable {
 
@@ -43,8 +45,20 @@ public final class SourceManager implements AutoCloseable {
     DaemonServer server = new DaemonServer(
         source.host(), source.port(), source.user(), source.password(),
         !source.ignoreUnauthorized());
-    SqlJob job = new SqlJob();
-    log.info("Connecting to Mapepire at {}:{} as {}", source.host(), source.port(), source.user());
+    SqlJob job;
+    if (source.jdbcOptions().isEmpty()) {
+      job = new SqlJob();
+    } else {
+      JDBCOptions jdbcOptions = JdbcOptionsMapper.toMapepire(source.jdbcOptions());
+      job = new SqlJob(jdbcOptions);
+    }
+    Object libs = source.jdbcOptions().get("libraries");
+    if (libs instanceof List<?> list && !list.isEmpty()) {
+      log.info("Connecting to Mapepire at {}:{} as {} (libraries: {})",
+          source.host(), source.port(), source.user(), list);
+    } else {
+      log.info("Connecting to Mapepire at {}:{} as {}", source.host(), source.port(), source.user());
+    }
     job.connect(server).get();
     log.info("Connected to source '{}'", sourceName);
     jobs.put(sourceName, job);
