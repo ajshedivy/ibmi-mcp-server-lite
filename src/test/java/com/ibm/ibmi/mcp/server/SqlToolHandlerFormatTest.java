@@ -71,7 +71,7 @@ class SqlToolHandlerFormatTest {
   private static SqlToolConfig toolWithFormat(String responseFormat) {
     return new SqlToolConfig(
         "test_tool", true, "src", "desc", "SELECT 1 FROM SYSIBM.SYSDUMMY1",
-        List.of(), responseFormat, null, null, Map.of(), SecurityConfig.DEFAULTS, null, null, null);
+        List.of(), responseFormat, null, null, Map.of(), SecurityConfig.DEFAULTS, null, null, null, null);
   }
 
   private static Map<String, Object> sampleOutput() {
