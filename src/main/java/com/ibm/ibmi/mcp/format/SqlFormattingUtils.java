@@ -23,6 +23,7 @@ public final class SqlFormattingUtils {
 
   private SqlFormattingUtils() {}
 
+  /** Returns a display header such as {@code EMPLOYEE_ID (INTEGER)}. */
   public static String formatColumnHeader(String columnName, String columnType) {
     if (columnType == null || columnType.isBlank()) {
       return columnName;
@@ -31,6 +32,7 @@ public final class SqlFormattingUtils {
     return columnName + " (" + baseType + ")";
   }
 
+  /** Returns {@code right} for numeric types, otherwise {@code left}. */
   public static String getColumnAlignment(String columnType) {
     if (columnType == null || columnType.isBlank()) {
       return "left";
@@ -45,6 +47,7 @@ public final class SqlFormattingUtils {
     return "left";
   }
 
+  /** Maps each column name to its table alignment based on SQL type. */
   public static Map<String, String> buildColumnAlignmentMap(List<Map<String, Object>> columns) {
     Map<String, String> alignmentMap = new LinkedHashMap<>();
     for (Map<String, Object> column : columns) {

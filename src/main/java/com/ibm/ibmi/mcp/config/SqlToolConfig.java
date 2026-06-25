@@ -41,10 +41,12 @@ public record SqlToolConfig(
     return rowsToFetch != null ? rowsToFetch : DEFAULT_ROWS_TO_FETCH;
   }
 
+  /** Resolved table style for markdown responses; defaults to {@link #DEFAULT_TABLE_FORMAT}. */
   public String effectiveTableFormat() {
     return tableFormat != null ? tableFormat : DEFAULT_TABLE_FORMAT;
   }
 
+  /** Resolved row cap for markdown result tables; defaults to {@link #DEFAULT_MAX_DISPLAY_ROWS}. */
   public int effectiveMaxDisplayRows() {
     return maxDisplayRows != null ? maxDisplayRows : DEFAULT_MAX_DISPLAY_ROWS;
   }

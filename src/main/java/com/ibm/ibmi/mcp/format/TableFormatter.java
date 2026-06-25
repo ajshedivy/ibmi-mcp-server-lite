@@ -18,10 +18,15 @@ public final class TableFormatter {
 
   private TableFormatter() {}
 
+  /** Formatted table text plus per-column null counts keyed by column index. */
   public record TableResult(String table, Map<String, Integer> nullCounts) {}
 
   private record ColumnInfo(String name, int width, String alignment) {}
 
+  /**
+   * Renders rows in the requested style ({@code markdown}, {@code ascii}, {@code grid},
+   * or {@code compact}) and tracks null cell counts per column.
+   */
   public static TableResult formatRawWithMetadata(
       List<String> headers,
       List<List<String>> rows,

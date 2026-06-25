@@ -15,6 +15,10 @@ public final class SqlMarkdownFormatter {
 
   private SqlMarkdownFormatter() {}
 
+  /**
+   * Renders a {@code StandardSqlToolOutput} map as markdown with SQL, parameters,
+   * results table, and execution summary sections.
+   */
   @SuppressWarnings("unchecked")
   public static String format(Map<String, Object> output, String tableFormat, int maxDisplayRows) {
     Boolean success = (Boolean) output.get("success");
