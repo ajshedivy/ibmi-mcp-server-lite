@@ -57,6 +57,20 @@ tools:
       readOnlyHint: true
       title: "List Libraries"
 
+  fetch_all_libraries:
+    source: ibmi-system
+    description: "Fetch all user libraries on the system"
+    parameters: []
+    fetchAllRows: true
+    statement: |
+      SELECT OBJNAME AS LIBRARY, OBJTEXT AS DESCRIPTION, OBJCREATED AS CREATED
+      FROM TABLE(QSYS2.OBJECT_STATISTICS('*ALLSIMPLE', 'LIB')) Z
+      WHERE OBJNAME NOT LIKE 'Q%'
+      ORDER BY OBJNAME
+    annotations:
+      readOnlyHint: true
+      title: "Fetch All Libraries"
+
 toolsets:
   performance:
     title: "Performance"
@@ -70,3 +84,4 @@ toolsets:
     description: "Object and library discovery tools"
     tools:
       - list_user_libraries
+      - fetch_all_libraries

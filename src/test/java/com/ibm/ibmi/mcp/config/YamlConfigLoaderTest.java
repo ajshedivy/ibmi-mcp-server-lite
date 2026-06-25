@@ -28,6 +28,7 @@ class YamlConfigLoaderTest {
         active_jobs:
           source: ibmi-system
           description: "Active jobs"
+          fetchAllRows: true
           statement: SELECT * FROM TABLE(QSYS2.ACTIVE_JOB_INFO()) A FETCH FIRST :limit ROWS ONLY
           parameters:
             - name: limit
@@ -144,5 +145,16 @@ class YamlConfigLoaderTest {
 
     Map<String, SqlToolConfig> none = config.selectTools(java.util.Set.of("does-not-exist"));
     assertTrue(none.isEmpty());
+  }
+
+  @Test
+  void fetchAllRowsParsedCorrectly() {
+    ToolsConfig config = loader.parse(SAMPLE);
+    
+    SqlToolConfig systemStatus = config.tools().get("system_status");
+    assertFalse(systemStatus.isFetchAll(), "system_status should not have fetchAllRows enabled");
+    
+    SqlToolConfig activeJobs = config.tools().get("active_jobs");
+    assertTrue(activeJobs.isFetchAll(), "active_jobs should have fetchAllRows enabled");
   }
 }
