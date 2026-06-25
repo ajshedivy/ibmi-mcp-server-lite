@@ -90,7 +90,7 @@ public final class SourceManager implements AutoCloseable {
   }
 
   @Override
-  public void close() {
+  public synchronized void close() {
     pools.forEach((name, pool) -> {
       try {
         pool.end();
