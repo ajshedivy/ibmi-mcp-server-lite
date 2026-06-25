@@ -110,7 +110,9 @@ public final class YamlConfigLoader {
           requireString(src, "user", "source '" + name + "'"),
           requireString(src, "password", "source '" + name + "'"),
           getBool(src, "ignore-unauthorized", false),
-          mergeJdbcOptions(parseYamlJdbcOptions(src, name))));
+          mergeJdbcOptions(parseYamlJdbcOptions(src, name)),
+          getInt(src, "max-size", SourceConfig.DEFAULT_MAX_SIZE),
+          getInt(src, "starting-size", SourceConfig.DEFAULT_STARTING_SIZE)));
     }
     return result;
   }
