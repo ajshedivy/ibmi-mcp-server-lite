@@ -145,6 +145,11 @@ public final class JsonSchemaBuilder {
     toolName.put("type", "string");
     toolName.put("description", "Name of the tool that executed this query");
 
+    ObjectNode truncated = props.putObject("truncated");
+    truncated.put("type", "boolean");
+    truncated.put("description",
+        "True when fetchAllRows pagination hit the row-count safety cap");
+
     ObjectNode sqlStatement = props.putObject("sqlStatement");
     sqlStatement.put("type", "string");
     sqlStatement.put("description", "The SQL statement that was executed");

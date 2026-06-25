@@ -240,6 +240,7 @@ class JsonSchemaBuilderTest {
     assertEquals("string", colItems.get("properties").get("name").get("type").asText());
     assertEquals("string", colItems.get("properties").get("type").get("type").asText());
     assertEquals("string", colItems.get("properties").get("label").get("type").asText());
+    assertTrue(props.get("metadata").get("properties").has("truncated"));
   }
 
   private static List<String> enumValues(JsonNode prop) {
