@@ -31,11 +31,8 @@ Close the gap between the lite server's JSON Schema / output handling and the re
 - ✅ [#1](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/1) — `--list-tools` CLI flag with tool/toolset/parameter formatting
 - ✅ [#2](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/2) — Enum JSON Schema parity: emit const / anyOf-of-const and the "Must be one of:" description suffix
 - ✅ [#3](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/3) — Register StandardSqlToolOutput JSON Schema as each tool's MCP outputSchema
+- ✅ [#4](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/4) — Implement `responseFormat: markdown` rendering (tableFormat / maxDisplayRows)
 - ✅ [#5](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/5) — Enforce parameter constraints (pattern / enum / min / max / length) server-side at call time
-
-| # | Issue | Difficulty | Estimate |
-|---|---|---|---|
-| [#4](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/4) | [Implement `responseFormat: markdown` rendering (tableFormat / maxDisplayRows)](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/4) | 🟢 starter | M (3-5 days) |
 
 ## M2 — Runtime Robustness
 

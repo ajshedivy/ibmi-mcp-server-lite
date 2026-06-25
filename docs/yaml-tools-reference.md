@@ -41,13 +41,35 @@ tools:
       SELECT * FROM SAMPLE.EMPLOYEE WHERE EMPNO = :employee_id
     enabled: true                  # default true; false = don't register
     rowsToFetch: 100               # max rows returned (default 100)
+    responseFormat: json           # json | markdown (default json)
+    tableFormat: markdown          # markdown | ascii | grid | compact (default markdown)
+    maxDisplayRows: 100            # rows shown in markdown tables (default 100)
     parameters: [...]              # see below
     security: {...}                # see below
     annotations: {...}             # see below
 ```
 
-*(parsed, ignored)*: `responseFormat`, `domain`, `category`. Markdown formatting,
-`tableFormat` and `maxDisplayRows` are roadmap items.
+*(parsed, ignored)*: `domain`, `category`.
+
+### `responseFormat`, `tableFormat`, `maxDisplayRows`
+
+Controls how the tool's **text content block** is rendered. The MCP
+`structuredContent` payload (`{success, data, metadata}`) is always the same JSON
+shape regardless of format.
+
+| Field | Values | Default | Effect |
+|---|---|---|---|
+| `responseFormat` | `json`, `markdown` | `json` | `json` — pretty-printed JSON text block (reference default). `markdown` — human-readable document with tool header, SQL, parameters, results table, and summary. |
+| `tableFormat` | `markdown`, `ascii`, `grid`, `compact` | `markdown` | Table style when `responseFormat: markdown`. Only affects the text block. |
+| `maxDisplayRows` | integer | `100` | Max rows included in the markdown results table. When fewer rows are shown than were fetched, a truncation note is appended. Does not change how many rows are fetched — use `rowsToFetch` for that. |
+
+Markdown output includes: an H2 tool name, success alert, row-count paragraph, SQL
+statement (truncated at 500 characters), bound parameters (when present), a typed
+results table (column headers show `NAME (TYPE)` with precision stripped; NULL cells
+render as `-`; cell values truncate at 50 characters), and a summary list (row count,
+columns, execution time, NULL counts, affected rows, parameter count when applicable).
+Numeric DB2 types are right-aligned in the table; text and temporal types are
+left-aligned.
 
 ### `parameters`
 
@@ -144,7 +166,6 @@ registers.
 ## Differences from the reference server (by design, for now)
 
 - Single YAML file only (no directory/glob merge, no hot reload).
-- JSON response format only (no markdown tables).
 - One Mapepire job per source (no pool) — concurrent tool calls serialize.
 - Simplified read-only validation (regex strategy only; the reference's primary path is
   a full SQL tokenizer/parser).
