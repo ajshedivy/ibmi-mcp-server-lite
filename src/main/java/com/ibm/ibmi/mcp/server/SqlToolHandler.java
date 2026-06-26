@@ -12,6 +12,7 @@ import org.slf4j.LoggerFactory;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ibm.ibmi.mcp.config.SecurityConfig;
 import com.ibm.ibmi.mcp.config.SqlToolConfig;
+import com.ibm.ibmi.mcp.format.SqlMarkdownFormatter;
 import com.ibm.ibmi.mcp.mapepire.SourceManager;
 import com.ibm.ibmi.mcp.sql.BoundStatement;
 import com.ibm.ibmi.mcp.sql.ParameterProcessor;
@@ -32,7 +33,9 @@ import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
  *
  * <p>The result mirrors the reference server's {@code StandardSqlToolOutput} shape —
  * {@code {success, data, metadata:{toolName, rowCount, executionTime, columns, ...}}} —
- * returned both as a JSON text block and as MCP {@code structuredContent}.
+ * always returned as MCP {@code structuredContent}, with a companion text block that is
+ * either pretty-printed JSON (default) or markdown when {@code responseFormat: markdown}
+ * is configured on the tool.
  *
  * <p>When {@code fetchAllRows: true}, pagination automatically fetches up to
  * {@link SqlToolConfig#MAX_PAGINATION_ROWS} rows using {@link SqlToolConfig#DEFAULT_PAGE_SIZE}
@@ -69,9 +72,10 @@ public final class SqlToolHandler
       PaginatedResult paginated = executeQuery(bound);
 
       long elapsed = System.currentTimeMillis() - start;
-      Map<String, Object> output = buildOutput(paginated, elapsed, bound.parameters().size());
+      Map<String, Object> output = buildOutput(
+          paginated, elapsed, bound.parameters().size(), bound.sql(), request.arguments());
       return CallToolResult.builder()
-          .addTextContent(mapper.writerWithDefaultPrettyPrinter().writeValueAsString(output))
+          .addTextContent(formatTextContent(output))
           .structuredContent(output)
           .isError(false)
           .build();
@@ -100,7 +104,7 @@ public final class SqlToolHandler
     Query query = bound.parameters().isEmpty()
         ? job.query(bound.sql())
         : job.query(bound.sql(), new QueryOptions(false, false, bound.parameters()));
-    
+
     try {
       if (tool.isFetchAll()) {
         return executePaginatedQuery(query);
@@ -128,7 +132,7 @@ public final class SqlToolHandler
     QueryResult<Object> firstResult = query.<Object>execute(SqlToolConfig.DEFAULT_PAGE_SIZE).get();
     QueryResult<Object> lastResult = firstResult;
     List<Object> accumulated = new ArrayList<>(firstResult.getData() != null ? firstResult.getData() : List.of());
-    
+
     // Paginate while more data exists and under the limit
     while (!lastResult.getIsDone() && accumulated.size() < SqlToolConfig.MAX_PAGINATION_ROWS) {
       lastResult = query.<Object>fetchMore(SqlToolConfig.DEFAULT_PAGE_SIZE).get();
@@ -136,18 +140,32 @@ public final class SqlToolHandler
         accumulated.addAll(lastResult.getData());
       }
     }
-    
+
     // Determine if results were truncated
     boolean truncated = !lastResult.getIsDone() || accumulated.size() > SqlToolConfig.MAX_PAGINATION_ROWS;
-    
+
     // Hard-clip to MAX_PAGINATION_ROWS
     if (accumulated.size() > SqlToolConfig.MAX_PAGINATION_ROWS) {
       accumulated = accumulated.subList(0, SqlToolConfig.MAX_PAGINATION_ROWS);
     }
-    
+
     return new PaginatedResult(firstResult, accumulated, truncated);
   }
 
+  static String formatToolResult(SqlToolConfig tool, Map<String, Object> output, ObjectMapper mapper)
+      throws com.fasterxml.jackson.core.JsonProcessingException {
+    SqlToolHandler handler = new SqlToolHandler(tool, null, mapper);
+    return handler.formatTextContent(output);
+  }
+
+  private String formatTextContent(Map<String, Object> output)
+      throws com.fasterxml.jackson.core.JsonProcessingException {
+    if ("markdown".equals(tool.responseFormat())) {
+      return SqlMarkdownFormatter.format(
+          output, tool.effectiveTableFormat(), tool.effectiveMaxDisplayRows());
+    }
+    return mapper.writerWithDefaultPrettyPrinter().writeValueAsString(output);
+  }
 
   /**
    * Wraps a query result with pagination metadata.
@@ -160,13 +178,19 @@ public final class SqlToolHandler
       QueryResult<Object> result,
       List<Object> accumulatedRows,
       boolean truncated) {
-    
+
     // Constructor for non-paginated results
     PaginatedResult(QueryResult<Object> result, boolean truncated) {
       this(result, null, truncated);
     }
   }
-  private Map<String, Object> buildOutput(PaginatedResult paginated, long elapsedMs, int paramCount) {
+
+  private Map<String, Object> buildOutput(
+      PaginatedResult paginated,
+      long elapsedMs,
+      int paramCount,
+      String sqlStatement,
+      Map<String, Object> parameters) {
     QueryResult<Object> result = paginated.result();
     // Use accumulated rows if present (pagination case), otherwise use result data
     List<Object> rows = paginated.accumulatedRows() != null
@@ -191,6 +215,8 @@ public final class SqlToolHandler
     metadata.put("columns", columns);
     metadata.put("parameterMode", tool.parameters().isEmpty() ? "none" : "parameters");
     metadata.put("parameterCount", paramCount);
+    metadata.put("sqlStatement", sqlStatement);
+    metadata.put("parameters", parameters != null ? parameters : Map.of());
     if (result.getUpdateCount() >= 0) {
       metadata.put("affectedRows", result.getUpdateCount());
     }

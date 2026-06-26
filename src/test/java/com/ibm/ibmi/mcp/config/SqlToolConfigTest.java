@@ -23,6 +23,8 @@ class SqlToolConfigTest {
         "SELECT 1",
         List.of(),
         null,
+        null,
+        null,
         Map.of(),
         SecurityConfig.DEFAULTS,
         null,           // rowsToFetch = null
@@ -44,6 +46,8 @@ class SqlToolConfigTest {
         "SELECT 1",
         List.of(),
         null,
+        null,
+        null,
         Map.of(),
         SecurityConfig.DEFAULTS,
         null,           // rowsToFetch = null
@@ -64,6 +68,8 @@ class SqlToolConfigTest {
         "description",
         "SELECT 1",
         List.of(),
+        null,
+        null,
         null,
         Map.of(),
         SecurityConfig.DEFAULTS,
@@ -87,6 +93,8 @@ class SqlToolConfigTest {
         "SELECT 1",
         List.of(),
         null,
+        null,
+        null,
         Map.of(),
         SecurityConfig.DEFAULTS,
         100,            // rowsToFetch = 100 (explicit limit)
@@ -109,6 +117,8 @@ class SqlToolConfigTest {
         "SELECT 1",
         List.of(),
         null,
+        null,
+        null,
         Map.of(),
         SecurityConfig.DEFAULTS,
         50,             // rowsToFetch = 50
@@ -129,6 +139,8 @@ class SqlToolConfigTest {
         "description",
         "SELECT 1",
         List.of(),
+        null,
+        null,
         null,
         Map.of(),
         SecurityConfig.DEFAULTS,

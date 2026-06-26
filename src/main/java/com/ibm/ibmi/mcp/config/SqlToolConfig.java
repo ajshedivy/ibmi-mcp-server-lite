@@ -9,9 +9,6 @@ import java.util.Map;
  * <p>{@code fetchAllRows: true} enables automatic pagination up to {@link #MAX_PAGINATION_ROWS}
  * rows using {@link #DEFAULT_PAGE_SIZE} per page. This setting is ignored if {@code rowsToFetch}
  * is explicitly set (use {@link #isFetchAll()} to check the effective behavior).
- *
- * <p>MVP note: {@code responseFormat}, {@code tableFormat}, and {@code maxDisplayRows} are
- * parsed but only the default JSON response format is implemented.
  */
 public record SqlToolConfig(
     String name,
@@ -21,6 +18,8 @@ public record SqlToolConfig(
     String statement,
     List<ParameterConfig> parameters,
     String responseFormat,
+    String tableFormat,
+    Integer maxDisplayRows,
     Map<String, Object> annotations,
     SecurityConfig security,
     Integer rowsToFetch,
@@ -31,6 +30,8 @@ public record SqlToolConfig(
   public static final int DEFAULT_ROWS_TO_FETCH = 100;
   public static final int DEFAULT_PAGE_SIZE = 1000;
   public static final int MAX_PAGINATION_ROWS = 30000;
+  public static final String DEFAULT_TABLE_FORMAT = "markdown";
+  public static final int DEFAULT_MAX_DISPLAY_ROWS = 100;
 
   public boolean isFetchAll() {
     return fetchAllRows != null && fetchAllRows && rowsToFetch == null;
@@ -38,5 +39,15 @@ public record SqlToolConfig(
 
   public int effectiveRowsToFetch() {
     return rowsToFetch != null ? rowsToFetch : DEFAULT_ROWS_TO_FETCH;
+  }
+
+  /** Resolved table style for markdown responses; defaults to {@link #DEFAULT_TABLE_FORMAT}. */
+  public String effectiveTableFormat() {
+    return tableFormat != null ? tableFormat : DEFAULT_TABLE_FORMAT;
+  }
+
+  /** Resolved row cap for markdown result tables; defaults to {@link #DEFAULT_MAX_DISPLAY_ROWS}. */
+  public int effectiveMaxDisplayRows() {
+    return maxDisplayRows != null ? maxDisplayRows : DEFAULT_MAX_DISPLAY_ROWS;
   }
 }

@@ -125,6 +125,8 @@ public final class YamlConfigLoader {
           getString(tool, "statement"),
           parseParameters(name, tool.get("parameters")),
           getString(tool, "responseFormat"),
+          getString(tool, "tableFormat"),
+          tool.get("maxDisplayRows") instanceof Number n ? n.intValue() : null,
           tool.get("annotations") == null ? Map.of() : asMap(tool.get("annotations"), "tool '" + name + "' annotations"),
           parseSecurity(name, tool.get("security")),
           tool.get("rowsToFetch") instanceof Number n ? n.intValue() : null,

@@ -133,6 +133,39 @@ class YamlConfigLoaderTest {
   }
 
   @Test
+  void parsesResponseFormatOptions() {
+    String yaml = """
+        sources:
+          a:
+            host: h
+            user: u
+            password: p
+        tools:
+          with_markdown:
+            source: a
+            description: d
+            statement: SELECT 1 FROM SYSIBM.SYSDUMMY1
+            responseFormat: markdown
+            tableFormat: ascii
+            maxDisplayRows: 25
+          defaults:
+            source: a
+            description: d
+            statement: SELECT 1 FROM SYSIBM.SYSDUMMY1
+        """;
+    ToolsConfig config = loader.parse(yaml);
+
+    SqlToolConfig markdown = config.tools().get("with_markdown");
+    assertEquals("markdown", markdown.responseFormat());
+    assertEquals("ascii", markdown.tableFormat());
+    assertEquals(25, markdown.maxDisplayRows());
+
+    SqlToolConfig defaults = config.tools().get("defaults");
+    assertEquals("markdown", defaults.effectiveTableFormat());
+    assertEquals(100, defaults.effectiveMaxDisplayRows());
+  }
+
+  @Test
   void selectToolsHonorsEnabledFlagAndToolsetFilter() {
     ToolsConfig config = loader.parse(SAMPLE);
 
