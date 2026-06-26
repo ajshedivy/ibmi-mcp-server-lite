@@ -108,9 +108,6 @@ public final class SqlToolHandler
     Query query = bound.parameters().isEmpty()
         ? pool.query(bound.sql())
         : pool.query(bound.sql(), new QueryOptions(false, false, bound.parameters()));
-    
-        ? job.query(bound.sql())
-        : job.query(bound.sql(), new QueryOptions(false, false, bound.parameters()));
 
     try {
       if (tool.isFetchAll()) {
