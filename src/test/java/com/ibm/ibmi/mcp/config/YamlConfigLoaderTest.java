@@ -232,4 +232,45 @@ class YamlConfigLoaderTest {
     assertEquals("system", opts.get("naming"));
     assertEquals("usa", opts.get("date format"));
   }
+
+  @Test
+  void envOnlyJdbcOptionsWithoutYamlBlock() {
+    YamlConfigLoader envLoader = new YamlConfigLoader(Map.of(
+        "DB2i_JDBC_OPTIONS", "naming=system;libraries=MYLIB,DEVDATA"));
+    String yaml = """
+        sources:
+          a:
+            host: h
+            user: u
+            password: p
+        tools:
+          t:
+            source: a
+            description: d
+            statement: SELECT 1 FROM SYSIBM.SYSDUMMY1
+        """;
+    Map<String, Object> opts = envLoader.parse(yaml).sources().get("a").jdbcOptions();
+    assertEquals(List.of("MYLIB", "DEVDATA"), opts.get("libraries"));
+    assertEquals("system", opts.get("naming"));
+  }
+
+  @Test
+  void malformedEnvJdbcOptionsFailsConfigLoad() {
+    YamlConfigLoader envLoader = new YamlConfigLoader(Map.of(
+        "DB2i_JDBC_OPTIONS", "naming"));
+    String yaml = """
+        sources:
+          a:
+            host: h
+            user: u
+            password: p
+        tools:
+          t:
+            source: a
+            description: d
+            statement: SELECT 1 FROM SYSIBM.SYSDUMMY1
+        """;
+    ConfigException e = assertThrows(ConfigException.class, () -> envLoader.parse(yaml));
+    assertTrue(e.getMessage().contains("malformed pair"));
+  }
 }
