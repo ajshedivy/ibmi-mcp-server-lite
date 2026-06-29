@@ -45,7 +45,17 @@ public final class SourceManager implements AutoCloseable {
     Pool pool = new Pool(options);
     log.info("Connecting pool to Mapepire at {}:{} as {} (max-size={}, starting-size={})",
         source.host(), source.port(), source.user(), source.maxSize(), source.startingSize());
-    pool.init().get();
+    try {
+      pool.init().get();
+    } catch (Exception e) {
+      try {
+        pool.end();
+      } catch (Exception endEx) {
+        log.warn("Error ending pool after failed init for source '{}': {}",
+            sourceName, endEx.getMessage());
+      }
+      throw e;
+    }
     log.info("Connected pool for source '{}'", sourceName);
     pools.put(sourceName, pool);
     return pool;
