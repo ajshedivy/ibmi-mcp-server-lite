@@ -1,5 +1,6 @@
 package com.ibm.ibmi.mcp.server;
 
+import java.io.InputStream;
 import java.util.Map;
 import java.util.Set;
 
@@ -48,7 +49,7 @@ public final class McpServerRunner {
 
   private McpServerRunner() {}
 
-  public static ServerHandle start(ToolsConfig config, Set<String> selectedToolsets) {
+  public static ServerHandle start(ToolsConfig config, Set<String> selectedToolsets, InputStream stdin) {
     ObjectMapper mapper = new ObjectMapper();
     McpJsonMapper jsonMapper = new JacksonMcpJsonMapper(mapper);
     JsonSchemaBuilder schemaBuilder = new JsonSchemaBuilder(mapper);
@@ -65,7 +66,8 @@ public final class McpServerRunner {
       SqlSecurityValidator.validate(tool.statement(), tool.security());
     }
 
-    McpSyncServer server = McpServer.sync(new StdioServerTransportProvider(jsonMapper))
+    // stdin EOF is detected by EofNotifyingInputStream in Main; transport remains the sole reader.
+    McpSyncServer server = McpServer.sync(new StdioServerTransportProvider(jsonMapper, stdin, System.out))
         .serverInfo(SERVER_NAME, SERVER_VERSION)
         .capabilities(ServerCapabilities.builder().tools(true).logging().build())
         .build();
