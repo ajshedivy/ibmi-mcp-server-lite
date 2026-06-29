@@ -1,7 +1,12 @@
 package com.ibm.ibmi.mcp.config;
 
+import java.util.Map;
+
 /**
  * A Mapepire connection definition from the {@code sources:} section of a tools YAML file.
+ *
+ * <p>{@code jdbcOptions} holds the merged result of the optional YAML {@code jdbc-options:}
+ * block and the {@code DB2i_JDBC_OPTIONS} environment variable (env wins on key collisions).
  *
  * <pre>
  * sources:
@@ -11,6 +16,9 @@ package com.ibm.ibmi.mcp.config;
  *     password: ${DB2i_PASS}
  *     port: 8076
  *     ignore-unauthorized: true
+ *     jdbc-options:
+ *       libraries: [QSYS, QGPL]
+ *       naming: system
  * </pre>
  */
 public record SourceConfig(
@@ -19,7 +27,8 @@ public record SourceConfig(
     int port,
     String user,
     String password,
-    boolean ignoreUnauthorized) {
+    boolean ignoreUnauthorized,
+    Map<String, Object> jdbcOptions) {
 
   public static final int DEFAULT_MAPEPIRE_PORT = 8076;
 }

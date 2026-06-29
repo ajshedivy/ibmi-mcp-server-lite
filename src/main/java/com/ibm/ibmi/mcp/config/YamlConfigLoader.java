@@ -4,11 +4,13 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -107,7 +109,8 @@ public final class YamlConfigLoader {
           getInt(src, "port", SourceConfig.DEFAULT_MAPEPIRE_PORT),
           requireString(src, "user", "source '" + name + "'"),
           requireString(src, "password", "source '" + name + "'"),
-          getBool(src, "ignore-unauthorized", false)));
+          getBool(src, "ignore-unauthorized", false),
+          mergeJdbcOptions(parseYamlJdbcOptions(src, name))));
     }
     return result;
   }
@@ -227,6 +230,49 @@ public final class YamlConfigLoader {
   }
 
   // -- small extraction helpers -------------------------------------------------------------
+
+  private Map<String, Object> mergeJdbcOptions(Map<String, Object> yamlJdbc) {
+    Map<String, Object> envJdbc = JdbcOptionsParser.parse(env.get("DB2i_JDBC_OPTIONS"));
+    if (yamlJdbc.isEmpty() && envJdbc.isEmpty()) {
+      return Collections.emptyMap();
+    }
+    Map<String, Object> merged = new LinkedHashMap<>(yamlJdbc);
+    merged.putAll(envJdbc);
+    return merged;
+  }
+
+  private static Map<String, Object> parseYamlJdbcOptions(Map<String, Object> src, String name) {
+    Object jdbcOptionsRaw = src.get("jdbc-options");
+    if (jdbcOptionsRaw == null) {
+      return Collections.emptyMap();
+    }
+
+    Map<String, Object> yamlJdbcOptions = asMap(jdbcOptionsRaw, "jdbc-options for source '" + name + "'");
+    Map<String, Object> processedOptions = new LinkedHashMap<>();
+
+    for (Map.Entry<String, Object> opt : yamlJdbcOptions.entrySet()) {
+      String key = opt.getKey();
+      Object value = opt.getValue();
+
+      if ("libraries".equals(key)) {
+        processedOptions.put("libraries", parseLibrariesValue(name, value));
+      } else {
+        processedOptions.put(key, value);
+      }
+    }
+    return processedOptions;
+  }
+
+  private static List<String> parseLibrariesValue(String sourceName, Object value) {
+    if (value instanceof List<?> list) {
+      return list.stream().map(String::valueOf).collect(Collectors.toList());
+    }
+    if (value instanceof String csv) {
+      return JdbcOptionsParser.parseLibrariesCsv(csv);
+    }
+    throw new ConfigException(
+        "jdbc-options.libraries for source '" + sourceName + "' must be an array or comma-separated string");
+  }
 
   @SuppressWarnings("unchecked")
   private static Map<String, Object> asMap(Object value, String what) {

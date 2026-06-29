@@ -23,12 +23,16 @@ sources:
     password: ${DB2i_PASS}    # required
     port: 8076                # optional, default 8076
     ignore-unauthorized: true # optional, default false — skip TLS *chain* validation
+    jdbc-options:             # optional — forwarded to mapepire JDBC driver
+      libraries: [MYLIB, DEVDATA]  # array or comma-separated string
+      naming: system               # any other JDBC option passes through
 ```
+
+> `DB2i_JDBC_OPTIONS` env var (semicolon-separated `key=value;...`) shallow-merges over
+> `jdbc-options` per source — env wins on key collisions. See `.env.example`.
 
 > mapepire-java still verifies the TLS **hostname** against the server certificate's SAN
 > even with `ignore-unauthorized: true`. Use a `host` that appears in the certificate.
-
-*(parsed, ignored)*: `jdbc-options`.
 
 ## `tools` — parameterized SQL
 
