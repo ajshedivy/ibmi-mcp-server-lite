@@ -104,27 +104,32 @@ public final class SqlToolHandler
    * @return a {@link PaginatedResult} containing rows, metadata, and truncation status
    */
   private PaginatedResult executeQuery(BoundStatement bound) throws Exception {
-    Pool pool = sources.getPool(tool.source());
-    Query query = bound.parameters().isEmpty()
-        ? pool.query(bound.sql())
-        : pool.query(bound.sql(), new QueryOptions(false, false, bound.parameters()));
-
+    sources.beginQuery();
     try {
-      if (tool.isFetchAll()) {
-        return executePaginatedQuery(query);
-      } else {
-        QueryResult<Object> result = query.<Object>execute(tool.effectiveRowsToFetch()).get();
-        return new PaginatedResult(result, false);
+      Pool pool = sources.getPool(tool.source());
+      Query query = bound.parameters().isEmpty()
+          ? pool.query(bound.sql())
+          : pool.query(bound.sql(), new QueryOptions(false, false, bound.parameters()));
+
+      try {
+        if (tool.isFetchAll()) {
+          return executePaginatedQuery(query);
+        } else {
+          QueryResult<Object> result = query.<Object>execute(tool.effectiveRowsToFetch()).get();
+          return new PaginatedResult(result, false);
+        }
+      } finally {
+        try {
+          query.close().get();
+        } catch (Exception e) {
+          if (MapepireFailures.isConnectionLevel(e)) {
+            sources.evictPool(tool.source());
+          }
+          log.warn("Failed to close query for tool '{}': {}", tool.name(), e.getMessage());
+        }
       }
     } finally {
-      try {
-        query.close().get();
-      } catch (Exception e) {
-        if (MapepireFailures.isConnectionLevel(e)) {
-          sources.evictPool(tool.source());
-        }
-        log.warn("Failed to close query for tool '{}': {}", tool.name(), e.getMessage());
-      }
+      sources.endQuery();
     }
   }
 
