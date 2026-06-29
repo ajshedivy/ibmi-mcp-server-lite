@@ -46,10 +46,10 @@ Make the execution and connection layers production-grade: a real connection poo
 - ✅ [#6](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/6) — Connection pooling: replace the single SqlJob per source with mapepire Pool
 - ✅ [#8](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/8) — Implement fetchAllRows pagination with a row-count safety cap and a `truncated` flag
 - ✅ [#7](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/7) — Pass YAML `jdbc-options` (and `DB2i_JDBC_OPTIONS`) through to mapepire `SqlJob`
+- ✅ [#9](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/9) — Graceful shutdown: exit when stdin closes and clean up in-flight queries + pools
 
 | # | Issue | Difficulty | Estimate |
 |---|---|---|---|
-| [#9](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/9) | [Graceful shutdown: exit when stdin closes and clean up in-flight queries + SqlJobs](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/9) | 🟡 intermediate | S (1-2 days) |
 
 ## M3 — Configuration Lifecycle
 

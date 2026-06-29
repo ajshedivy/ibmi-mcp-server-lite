@@ -148,7 +148,7 @@ JSON text block and as MCP `structuredContent`:
 ## Testing
 
 - `./mvnw test` — unit tests for the YAML loader, schema generation, parameter binding,
-  and security validation (no IBM i required).
+  security validation, and graceful shutdown (no IBM i required).
 - `python3 scripts/smoke-test.py` — full-protocol test against a live IBM i (needs `.env`).
 
 ## Running on IBM i
@@ -161,9 +161,9 @@ runtime gap on IBM i** — the one open blocker for running the server on the sy
 
 ## What's deliberately missing
 
-This MVP implements a faithful subset of the reference server. HTTP transport, connection
-pooling, multi-file YAML merge, hot reload, the full SQL security parser, and more are
-sequenced into milestones — each tracked as a GitHub issue
-with pointers into the reference implementation — in the [**roadmap**](ROADMAP.md)
+This MVP implements a faithful subset of the reference server. HTTP transport, multi-file
+YAML merge, hot reload, the full SQL security parser, structured per-call logging, and more
+are sequenced into milestones — each tracked as a GitHub issue with pointers into the
+reference implementation — in the [**roadmap**](ROADMAP.md)
 ([milestones](https://github.com/ajshedivy/ibmi-mcp-server-lite/milestones) ·
 [good first issues](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues?q=is%3Aopen+label%3A%22good+first+issue%22)).
