@@ -111,7 +111,7 @@ One pipeline, one package per stage under `src/main/java/com/ibm/ibmi/mcp/`:
 | `config` | YAML model records + loader (`${VAR}` interpolation, validation) |
 | `schema` | Parameter definitions -> MCP `inputSchema` (JSON Schema) |
 | `sql` | `:name` -> parameterized-query binding; basic SQL security validation |
-| `mapepire` | One lazy `SqlJob` per source (`SourceManager`) |
+| `mapepire` | One lazy Mapepire `Pool` per source (`SourceManager`) |
 | `server` | MCP server construction, tool registration, call handling |
 
 Supporting material: [`ROADMAP.md`](ROADMAP.md) (milestones + linked issues), `tools/`

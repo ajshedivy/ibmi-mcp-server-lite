@@ -47,7 +47,7 @@ YAML file ──(config: env-interpolate raw text, SnakeYAML SafeConstructor →
                     SqlToolHandler handles tools/call)
          ──(sql: ParameterProcessor binds :name → ? placeholders;
                  SqlSecurityValidator enforces read-only)
-         ──(mapepire: SourceManager holds one lazy SqlJob per source)
+         ──(mapepire: SourceManager holds one lazy Mapepire Pool per source)
 ```
 
 Semantics live in the **config records**, not the loader: `ParameterConfig.isRequiredInSchema()`
