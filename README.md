@@ -128,7 +128,7 @@ Key semantics (full details in [docs/yaml-tools-reference.md](docs/yaml-tools-re
 | `com.ibm.ibmi.mcp.config` | YAML model records + loader (`${VAR}` interpolation, validation) |
 | `com.ibm.ibmi.mcp.schema` | Parameter definitions → MCP `inputSchema` (JSON Schema) |
 | `com.ibm.ibmi.mcp.sql` | `:name` → parameterized-query binding; basic SQL security validation |
-| `com.ibm.ibmi.mcp.mapepire` | One lazy `SqlJob` per source (`SourceManager`) |
+| `com.ibm.ibmi.mcp.mapepire` | One lazy Mapepire `Pool` per source (`SourceManager`) |
 | `com.ibm.ibmi.mcp.server` | MCP server construction, tool registration, call handling |
 | `packaging/`, `Makefile` | IBM i RPM skeleton (spec, PASE launcher, Service Commander unit) |
 

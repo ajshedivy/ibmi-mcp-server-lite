@@ -23,6 +23,8 @@ sources:
     password: ${DB2i_PASS}    # required
     port: 8076                # optional, default 8076
     ignore-unauthorized: true # optional, default false — skip TLS *chain* validation
+    max-size: 10              # optional, default 10 — max SqlJobs in the connection pool
+    starting-size: 2          # optional, default 2 — jobs created at pool init
     jdbc-options:             # optional — forwarded to mapepire JDBC driver
       libraries: [MYLIB, DEVDATA]  # array or comma-separated string
       naming: system               # any other JDBC option passes through

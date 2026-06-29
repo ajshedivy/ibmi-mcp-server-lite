@@ -12,14 +12,15 @@ import org.slf4j.LoggerFactory;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ibm.ibmi.mcp.config.SecurityConfig;
 import com.ibm.ibmi.mcp.config.SqlToolConfig;
+import com.ibm.ibmi.mcp.mapepire.MapepireFailures;
 import com.ibm.ibmi.mcp.format.SqlMarkdownFormatter;
 import com.ibm.ibmi.mcp.mapepire.SourceManager;
 import com.ibm.ibmi.mcp.sql.BoundStatement;
 import com.ibm.ibmi.mcp.sql.ParameterProcessor;
 import com.ibm.ibmi.mcp.sql.SqlSecurityValidator;
 
+import io.github.mapepire_ibmi.Pool;
 import io.github.mapepire_ibmi.Query;
-import io.github.mapepire_ibmi.SqlJob;
 import io.github.mapepire_ibmi.types.ColumnMetadata;
 import io.github.mapepire_ibmi.types.QueryOptions;
 import io.github.mapepire_ibmi.types.QueryResult;
@@ -81,6 +82,9 @@ public final class SqlToolHandler
           .build();
     } catch (Exception e) {
       Throwable cause = e.getCause() != null ? e.getCause() : e;
+      if (MapepireFailures.isConnectionLevel(e)) {
+        sources.evictPool(tool.source());
+      }
       log.error("Tool '{}' failed: {}", tool.name(), cause.getMessage());
       Map<String, Object> output = new LinkedHashMap<>();
       output.put("success", false);
@@ -100,10 +104,10 @@ public final class SqlToolHandler
    * @return a {@link PaginatedResult} containing rows, metadata, and truncation status
    */
   private PaginatedResult executeQuery(BoundStatement bound) throws Exception {
-    SqlJob job = sources.getJob(tool.source());
+    Pool pool = sources.getPool(tool.source());
     Query query = bound.parameters().isEmpty()
-        ? job.query(bound.sql())
-        : job.query(bound.sql(), new QueryOptions(false, false, bound.parameters()));
+        ? pool.query(bound.sql())
+        : pool.query(bound.sql(), new QueryOptions(false, false, bound.parameters()));
 
     try {
       if (tool.isFetchAll()) {
@@ -116,6 +120,9 @@ public final class SqlToolHandler
       try {
         query.close().get();
       } catch (Exception e) {
+        if (MapepireFailures.isConnectionLevel(e)) {
+          sources.evictPool(tool.source());
+        }
         log.warn("Failed to close query for tool '{}': {}", tool.name(), e.getMessage());
       }
     }

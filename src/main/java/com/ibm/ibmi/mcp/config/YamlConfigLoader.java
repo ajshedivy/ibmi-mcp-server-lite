@@ -103,6 +103,9 @@ public final class YamlConfigLoader {
     for (var entry : section.entrySet()) {
       String name = entry.getKey();
       Map<String, Object> src = asMap(entry.getValue(), "source '" + name + "'");
+      int maxSize = getInt(src, "max-size", SourceConfig.DEFAULT_MAX_SIZE);
+      int startingSize = getInt(src, "starting-size", SourceConfig.DEFAULT_STARTING_SIZE);
+      validatePoolSizes(name, maxSize, startingSize);
       result.put(name, new SourceConfig(
           name,
           requireString(src, "host", "source '" + name + "'"),
@@ -110,6 +113,8 @@ public final class YamlConfigLoader {
           requireString(src, "user", "source '" + name + "'"),
           requireString(src, "password", "source '" + name + "'"),
           getBool(src, "ignore-unauthorized", false),
+          maxSize,
+          startingSize,
           mergeJdbcOptions(parseYamlJdbcOptions(src, name))));
     }
     return result;
@@ -301,5 +306,18 @@ public final class YamlConfigLoader {
 
   private static int getInt(Map<String, Object> map, String key, int dflt) {
     return map.get(key) instanceof Number n ? n.intValue() : dflt;
+  }
+
+  private static void validatePoolSizes(String sourceName, int maxSize, int startingSize) {
+    if (maxSize <= 0) {
+      throw new ConfigException("Source '" + sourceName + "' max-size must be greater than 0");
+    }
+    if (startingSize <= 0) {
+      throw new ConfigException("Source '" + sourceName + "' starting-size must be greater than 0");
+    }
+    if (startingSize > maxSize) {
+      throw new ConfigException(
+          "Source '" + sourceName + "' starting-size must be less than or equal to max-size");
+    }
   }
 }

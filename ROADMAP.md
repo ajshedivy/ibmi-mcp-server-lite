@@ -43,12 +43,12 @@ Make the execution and connection layers production-grade: a real connection poo
 > **Why these together:** This milestone hardens the mapepire/ and sql-execution path that M1's correct outputs now flow through. connection-pooling is the natural anchor (it reshapes SourceManager); jdbc-options-passthrough and graceful-shutdown both operate on the same SqlJob/source lifecycle, so co-locating them avoids merge churn across the connection layer; pagination-fetch-all-rows extends the execution loop. These are the 'intermediate' connection/execution/lifecycle issues that require a live Mapepire to fully validate — a reasonable step up once interns have shipped M1. No dependsOn constraints, but ordering pooling first reduces rework for the others.
 
 **Implemented:**
+- ✅ [#6](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/6) — Connection pooling: replace the single SqlJob per source with mapepire Pool
 - ✅ [#8](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/8) — Implement fetchAllRows pagination with a row-count safety cap and a `truncated` flag
 - ✅ [#7](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/7) — Pass YAML `jdbc-options` (and `DB2i_JDBC_OPTIONS`) through to mapepire `SqlJob`
 
 | # | Issue | Difficulty | Estimate |
 |---|---|---|---|
-| [#6](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/6) | [Connection pooling: replace the single SqlJob per source with mapepire Pool](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/6) | 🟡 intermediate | M (3-5 days) |
 | [#9](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/9) | [Graceful shutdown: exit when stdin closes and clean up in-flight queries + SqlJobs](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/9) | 🟡 intermediate | S (1-2 days) |
 
 ## M3 — Configuration Lifecycle

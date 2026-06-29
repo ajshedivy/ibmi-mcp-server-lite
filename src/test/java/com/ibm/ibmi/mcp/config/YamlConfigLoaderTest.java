@@ -9,6 +9,12 @@ import java.util.List;
 import java.util.Map;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
+
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 class YamlConfigLoaderTest {
 
@@ -62,6 +68,8 @@ class YamlConfigLoaderTest {
     assertEquals("secret", source.password());
     assertEquals(8076, source.port());
     assertTrue(source.ignoreUnauthorized());
+    assertEquals(SourceConfig.DEFAULT_MAX_SIZE, source.maxSize());
+    assertEquals(SourceConfig.DEFAULT_STARTING_SIZE, source.startingSize());
 
     assertEquals(3, config.tools().size());
     SqlToolConfig tool = config.tools().get("active_jobs");
@@ -131,6 +139,63 @@ class YamlConfigLoaderTest {
             tools: [nope]
         """;
     assertThrows(ConfigException.class, () -> loader.parse(yaml));
+  }
+
+  private static String minimalYamlWithPoolKeys(String poolKeys) {
+    String poolSection = poolKeys.lines()
+        .map(line -> "    " + line)
+        .collect(Collectors.joining("\n"));
+    return """
+        sources:
+          ibmi-system:
+            host: h
+            user: u
+            password: p
+        %s
+        tools:
+          t:
+            source: ibmi-system
+            description: d
+            statement: SELECT 1 FROM SYSIBM.SYSDUMMY1
+        """.formatted(poolSection);
+  }
+
+  static Stream<Arguments> invalidPoolSizes() {
+    return Stream.of(
+        Arguments.of("max-size: 0", "max-size must be greater than 0"),
+        Arguments.of("starting-size: 0", "starting-size must be greater than 0"),
+        Arguments.of("max-size: -1", "max-size must be greater than 0"),
+        Arguments.of("max-size: 2\nstarting-size: 5",
+            "starting-size must be less than or equal to max-size"));
+  }
+
+  @ParameterizedTest
+  @MethodSource("invalidPoolSizes")
+  void invalidPoolSizesFailAtParseTime(String poolOverrides, String expectedMessage) {
+    String yaml = minimalYamlWithPoolKeys(poolOverrides);
+    ConfigException e = assertThrows(ConfigException.class, () -> loader.parse(yaml));
+    assertTrue(e.getMessage().contains(expectedMessage));
+  }
+
+  @Test
+  void parsesSourcePoolSizeKeys() {
+    String yaml = """
+        sources:
+          ibmi-system:
+            host: h
+            user: u
+            password: p
+            max-size: 5
+            starting-size: 1
+        tools:
+          t:
+            source: ibmi-system
+            description: d
+            statement: SELECT 1 FROM SYSIBM.SYSDUMMY1
+        """;
+    SourceConfig source = loader.parse(yaml).sources().get("ibmi-system");
+    assertEquals(5, source.maxSize());
+    assertEquals(1, source.startingSize());
   }
 
   @Test

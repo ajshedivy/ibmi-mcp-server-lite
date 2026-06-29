@@ -16,6 +16,8 @@ import java.util.Map;
  *     password: ${DB2i_PASS}
  *     port: 8076
  *     ignore-unauthorized: true
+ *     max-size: 10
+ *     starting-size: 2
  *     jdbc-options:
  *       libraries: [QSYS, QGPL]
  *       naming: system
@@ -28,7 +30,11 @@ public record SourceConfig(
     String user,
     String password,
     boolean ignoreUnauthorized,
+    int maxSize,
+    int startingSize,
     Map<String, Object> jdbcOptions) {
 
   public static final int DEFAULT_MAPEPIRE_PORT = 8076;
+  public static final int DEFAULT_MAX_SIZE = 10;
+  public static final int DEFAULT_STARTING_SIZE = 2;
 }
