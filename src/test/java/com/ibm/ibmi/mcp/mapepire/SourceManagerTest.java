@@ -24,7 +24,7 @@ class SourceManagerTest {
   void poolOptionsUseSourceDefaults() {
     SourceConfig source = new SourceConfig(
         "ibmi", "host.example.com", 8076, "user", "pass", false,
-        SourceConfig.DEFAULT_MAX_SIZE, SourceConfig.DEFAULT_STARTING_SIZE);
+        SourceConfig.DEFAULT_MAX_SIZE, SourceConfig.DEFAULT_STARTING_SIZE, Map.of());
     PoolOptions options = SourceManager.poolOptionsFor(source);
 
     assertEquals(SourceConfig.DEFAULT_MAX_SIZE, options.getMaxSize());
@@ -42,7 +42,7 @@ class SourceManagerTest {
   void poolOptionsHonorExplicitSizes() {
     SourceConfig source = new SourceConfig(
         "ibmi", "h", 8076, "u", "p", true,
-        5, 1);
+        5, 1, Map.of());
     PoolOptions options = SourceManager.poolOptionsFor(source);
 
     assertEquals(5, options.getMaxSize());

@@ -12,13 +12,10 @@ import com.ibm.ibmi.mcp.config.SourceConfig;
 import io.github.mapepire_ibmi.Pool;
 import io.github.mapepire_ibmi.types.DaemonServer;
 import io.github.mapepire_ibmi.types.JDBCOptions;
+import io.github.mapepire_ibmi.types.PoolOptions;
 
 /**
  * Owns one lazily-initialized Mapepire {@link Pool} per YAML source.
- *
- * <p>A single job serializes queries against that source — fine for an MVP.
- * TODO: replace with {@code io.github.mapepire_ibmi.Pool} for concurrent tool
- * calls and add reconnect-on-failure.
  */
 public final class SourceManager implements AutoCloseable {
 
@@ -43,8 +40,14 @@ public final class SourceManager implements AutoCloseable {
     }
     PoolOptions options = poolOptionsFor(source);
     Pool pool = new Pool(options);
-    log.info("Connecting pool to Mapepire at {}:{} as {} (max-size={}, starting-size={})",
-        source.host(), source.port(), source.user(), source.maxSize(), source.startingSize());
+    Object libs = source.jdbcOptions().get("libraries");
+    if (libs instanceof List<?> list && !list.isEmpty()) {
+      log.info("Connecting pool to Mapepire at {}:{} as {} (libraries: {}, max-size={}, starting-size={})",
+          source.host(), source.port(), source.user(), list, source.maxSize(), source.startingSize());
+    } else {
+      log.info("Connecting pool to Mapepire at {}:{} as {} (max-size={}, starting-size={})",
+          source.host(), source.port(), source.user(), source.maxSize(), source.startingSize());
+    }
     try {
       pool.init().get();
     } catch (Exception e) {
@@ -79,24 +82,11 @@ public final class SourceManager implements AutoCloseable {
     DaemonServer server = new DaemonServer(
         source.host(), source.port(), source.user(), source.password(),
         !source.ignoreUnauthorized());
-    SqlJob job;
     if (source.jdbcOptions().isEmpty()) {
-      job = new SqlJob();
-    } else {
-      JDBCOptions jdbcOptions = JdbcOptionsMapper.toMapepire(source.jdbcOptions());
-      job = new SqlJob(jdbcOptions);
+      return new PoolOptions(server, source.maxSize(), source.startingSize());
     }
-    Object libs = source.jdbcOptions().get("libraries");
-    if (libs instanceof List<?> list && !list.isEmpty()) {
-      log.info("Connecting to Mapepire at {}:{} as {} (libraries: {})",
-          source.host(), source.port(), source.user(), list);
-    } else {
-      log.info("Connecting to Mapepire at {}:{} as {}", source.host(), source.port(), source.user());
-    }
-    job.connect(server).get();
-    log.info("Connected to source '{}'", sourceName);
-    jobs.put(sourceName, job);
-    return job;
+    JDBCOptions jdbcOptions = JdbcOptionsMapper.toMapepire(source.jdbcOptions());
+    return new PoolOptions(server, jdbcOptions, source.maxSize(), source.startingSize());
   }
 
   @Override
