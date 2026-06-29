@@ -9,6 +9,12 @@ import java.util.List;
 import java.util.Map;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
+
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 class YamlConfigLoaderTest {
 
@@ -133,6 +139,42 @@ class YamlConfigLoaderTest {
             tools: [nope]
         """;
     assertThrows(ConfigException.class, () -> loader.parse(yaml));
+  }
+
+  private static String minimalYamlWithPoolKeys(String poolKeys) {
+    String poolSection = poolKeys.lines()
+        .map(line -> "    " + line)
+        .collect(Collectors.joining("\n"));
+    return """
+        sources:
+          ibmi-system:
+            host: h
+            user: u
+            password: p
+        %s
+        tools:
+          t:
+            source: ibmi-system
+            description: d
+            statement: SELECT 1 FROM SYSIBM.SYSDUMMY1
+        """.formatted(poolSection);
+  }
+
+  static Stream<Arguments> invalidPoolSizes() {
+    return Stream.of(
+        Arguments.of("max-size: 0", "max-size must be greater than 0"),
+        Arguments.of("starting-size: 0", "starting-size must be greater than 0"),
+        Arguments.of("max-size: -1", "max-size must be greater than 0"),
+        Arguments.of("max-size: 2\nstarting-size: 5",
+            "starting-size must be less than or equal to max-size"));
+  }
+
+  @ParameterizedTest
+  @MethodSource("invalidPoolSizes")
+  void invalidPoolSizesFailAtParseTime(String poolOverrides, String expectedMessage) {
+    String yaml = minimalYamlWithPoolKeys(poolOverrides);
+    ConfigException e = assertThrows(ConfigException.class, () -> loader.parse(yaml));
+    assertTrue(e.getMessage().contains(expectedMessage));
   }
 
   @Test
