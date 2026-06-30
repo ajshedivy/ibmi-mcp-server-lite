@@ -705,4 +705,39 @@ class YamlConfigLoaderTest {
     assertTrue(config.tools().containsKey("query_one"));
     assertTrue(config.toolsets().containsKey("ops"));
   }
+
+  @Test
+  void validateMergedFalseAppliesToSingleFile(@TempDir Path dir) throws IOException {
+    write(dir, "only.yaml", """
+        tools:
+          query_one:
+            source: missing
+            description: d
+            statement: SELECT 1 FROM SYSIBM.SYSDUMMY1
+        """);
+
+    Map<String, String> env = Map.of("YAML_VALIDATE_MERGED", "false");
+    YamlConfigLoader mergeLoader = new YamlConfigLoader(env);
+    ToolsConfig config = mergeLoader.loadAll(dir.toString(), MergeOptions.fromEnv(env));
+
+    assertTrue(config.tools().containsKey("query_one"));
+  }
+
+  @Test
+  void validateMergedFalseAppliesToSingleFilePath(@TempDir Path dir) throws IOException {
+    Path file = dir.resolve("only.yaml");
+    Files.writeString(file, """
+        tools:
+          query_one:
+            source: missing
+            description: d
+            statement: SELECT 1 FROM SYSIBM.SYSDUMMY1
+        """);
+
+    Map<String, String> env = Map.of("YAML_VALIDATE_MERGED", "false");
+    YamlConfigLoader mergeLoader = new YamlConfigLoader(env);
+    ToolsConfig config = mergeLoader.loadAll(file.toString(), MergeOptions.fromEnv(env));
+
+    assertTrue(config.tools().containsKey("query_one"));
+  }
 }

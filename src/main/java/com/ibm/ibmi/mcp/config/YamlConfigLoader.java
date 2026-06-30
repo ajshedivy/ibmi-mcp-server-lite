@@ -69,7 +69,7 @@ public final class YamlConfigLoader {
       throw new ConfigException("No tools YAML files to load");
     }
     if (files.size() == 1) {
-      return load(files.get(0));
+      return parse(readFile(files.get(0)), opts.validateMerged());
     }
 
     log.info("Loading and merging {} YAML files", files.size());
