@@ -174,19 +174,30 @@ public final class YamlConfigLoader {
   }
 
   private static List<Path> findYamlFilesMatchingGlob(String pattern) {
-    PathMatcher matcher = FileSystems.getDefault().getPathMatcher("glob:" + pattern);
+    List<String> patterns = expandGlobPattern(pattern);
     Path walkRoot = globWalkRoot(pattern);
     if (!Files.exists(walkRoot)) {
       return List.of();
     }
 
+    List<PathMatcher> matchers = patterns.stream()
+        .map(p -> FileSystems.getDefault().getPathMatcher("glob:" + p))
+        .toList();
+
     try {
       List<Path> files = new ArrayList<>();
+      Path normalizedRoot = walkRoot.toAbsolutePath().normalize();
       Files.walkFileTree(walkRoot, new SimpleFileVisitor<>() {
         @Override
         public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
-          if (Files.isRegularFile(file) && isYamlFile(file) && matcher.matches(file)) {
-            files.add(file);
+          if (!Files.isRegularFile(file) || !isYamlFile(file)) {
+            return FileVisitResult.CONTINUE;
+          }
+          for (PathMatcher matcher : matchers) {
+            if (matchesGlob(matcher, normalizedRoot, file)) {
+              files.add(file);
+              break;
+            }
           }
           return FileVisitResult.CONTINUE;
         }
@@ -195,6 +206,53 @@ public final class YamlConfigLoader {
     } catch (IOException e) {
       throw new ConfigException("Cannot resolve tools YAML glob: " + pattern, e);
     }
+  }
+
+  /**
+   * Expands {@code {a,b}} brace alternation and adds a flattened variant for each
+   * {@code **} directory segment so root-level files match (Java {@link PathMatcher} treats
+   * {@code **} as one-or-more directories; the reference server's glob matches zero-or-more).
+   */
+  static List<String> expandGlobPattern(String pattern) {
+    LinkedHashSet<String> expanded = new LinkedHashSet<>();
+    for (String braceVariant : expandBraceAlternation(pattern)) {
+      expanded.add(braceVariant);
+      if (braceVariant.contains("/**/")) {
+        expanded.add(braceVariant.replace("/**/", "/"));
+      }
+    }
+    return List.copyOf(expanded);
+  }
+
+  /** Recursively expands the first {@code {alt1,alt2,...}} group in a glob pattern. */
+  static List<String> expandBraceAlternation(String pattern) {
+    int open = pattern.indexOf('{');
+    if (open < 0) {
+      return List.of(pattern);
+    }
+    int close = pattern.indexOf('}', open);
+    if (close < 0) {
+      return List.of(pattern);
+    }
+    String prefix = pattern.substring(0, open);
+    String suffix = pattern.substring(close + 1);
+    String[] alternatives = pattern.substring(open + 1, close).split(",");
+    List<String> results = new ArrayList<>();
+    for (String alt : alternatives) {
+      results.addAll(expandBraceAlternation(prefix + alt.trim() + suffix));
+    }
+    return results;
+  }
+
+  private static boolean matchesGlob(PathMatcher matcher, Path walkRoot, Path file) {
+    Path normalized = file.toAbsolutePath().normalize();
+    if (matcher.matches(normalized) || matcher.matches(file)) {
+      return true;
+    }
+    if (normalized.startsWith(walkRoot)) {
+      return matcher.matches(walkRoot.relativize(normalized));
+    }
+    return false;
   }
 
   private static Path globWalkRoot(String pattern) {

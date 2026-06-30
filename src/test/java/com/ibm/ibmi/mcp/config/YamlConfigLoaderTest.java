@@ -423,6 +423,68 @@ class YamlConfigLoaderTest {
   }
 
   @Test
+  void loadsNestedGlobRecursiveYaml(@TempDir Path dir) throws IOException {
+    Path nested = dir.resolve("nested");
+    Files.createDirectories(nested);
+    write(dir, "sources.yaml", MINIMAL_SOURCE);
+    write(nested, "tools.yaml", MINIMAL_TOOL);
+
+    String glob = dir.toString() + "/**/*.yaml";
+    ToolsConfig config = loader.loadAll(glob, MergeOptions.fromEnv(Map.of()));
+
+    assertTrue(config.sources().containsKey("shared"));
+    assertTrue(config.tools().containsKey("query_one"));
+  }
+
+  @Test
+  void loadsNestedGlobRecursiveYml(@TempDir Path dir) throws IOException {
+    Path nested = dir.resolve("nested");
+    Files.createDirectories(nested);
+    write(dir, "sources.yml", MINIMAL_SOURCE);
+    write(nested, "tools.yml", MINIMAL_TOOL);
+
+    String glob = dir.toString() + "/**/*.yml";
+    ToolsConfig config = loader.loadAll(glob, MergeOptions.fromEnv(Map.of()));
+
+    assertTrue(config.sources().containsKey("shared"));
+    assertTrue(config.tools().containsKey("query_one"));
+  }
+
+  @Test
+  void loadsGlobWithBraceAlternation(@TempDir Path dir) throws IOException {
+    Path nested = dir.resolve("nested");
+    Files.createDirectories(nested);
+    write(dir, "sources.yaml", MINIMAL_SOURCE);
+    write(nested, "tools.yml", MINIMAL_TOOL);
+
+    String glob = dir.toString() + "/**/*.{yaml,yml}";
+    ToolsConfig config = loader.loadAll(glob, MergeOptions.fromEnv(Map.of()));
+
+    assertTrue(config.sources().containsKey("shared"));
+    assertTrue(config.tools().containsKey("query_one"));
+  }
+
+  @Test
+  void expandBraceAlternationSplitsAlternatives() {
+    assertEquals(
+        List.of("a.yaml", "a.yml"),
+        YamlConfigLoader.expandBraceAlternation("a.{yaml,yml}"));
+    assertEquals(
+        List.of("dir/**/*.yaml", "dir/**/*.yml"),
+        YamlConfigLoader.expandBraceAlternation("dir/**/*.{yaml,yml}"));
+  }
+
+  @Test
+  void expandGlobPatternAddsFlattenedRecursiveVariant() {
+    assertEquals(
+        List.of("dir/**/*.yaml", "dir/*.yaml"),
+        YamlConfigLoader.expandGlobPattern("dir/**/*.yaml"));
+    assertEquals(
+        List.of("dir/**/*.yaml", "dir/*.yaml", "dir/**/*.yml", "dir/*.yml"),
+        YamlConfigLoader.expandGlobPattern("dir/**/*.{yaml,yml}"));
+  }
+
+  @Test
   void emptyDirectoryFails(@TempDir Path dir) {
     ConfigException e = assertThrows(
         ConfigException.class, () -> loader.loadAll(dir.toString(), MergeOptions.fromEnv(Map.of())));

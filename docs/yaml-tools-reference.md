@@ -188,7 +188,9 @@ file may reference a source or toolset member defined in another; post-merge val
 (`YAML_VALIDATE_MERGED`) is the gate.
 
 Directory walks are recursive (`**/*.{yaml,yml}`). Glob patterns use Java NIO `PathMatcher`
-semantics (not shell brace expansion).
+semantics; `{yaml,yml}` brace alternation is expanded before matching (as in the reference
+server). Because Java treats `**` as one-or-more directories, patterns containing `/**/` also
+try a flattened variant (`/**/*.yaml` also matches `/*.yaml` at the walk root).
 
 ## Differences from the reference server (by design, for now)
 
