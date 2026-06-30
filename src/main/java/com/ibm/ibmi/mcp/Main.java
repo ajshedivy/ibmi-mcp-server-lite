@@ -19,6 +19,7 @@ import com.ibm.ibmi.mcp.config.YamlConfigLoader;
 import com.ibm.ibmi.mcp.server.McpServerRunner;
 import com.ibm.ibmi.mcp.util.DotEnv;
 import com.ibm.ibmi.mcp.util.EofNotifyingInputStream;
+import com.ibm.ibmi.mcp.util.ShutdownGuard;
 
 /**
  * Entry point. Usage:
@@ -109,18 +110,11 @@ public final class Main {
     AtomicBoolean shuttingDown = new AtomicBoolean(false);
     McpServerRunner.ServerHandle[] handle = new McpServerRunner.ServerHandle[1];
 
-    Runnable shutdown = () -> {
-      if (!shuttingDown.compareAndSet(false, true)) {
-        return;
+    Runnable shutdown = ShutdownGuard.once(shuttingDown, shutdownLatch, () -> {
+      if (handle[0] != null) {
+        handle[0].close();
       }
-      try {
-        if (handle[0] != null) {
-          handle[0].close();
-        }
-      } finally {
-        shutdownLatch.countDown();
-      }
-    };
+    });
 
     InputStream stdin = new EofNotifyingInputStream(
         System.in, () -> new Thread(shutdown, "stdin-eof").start());

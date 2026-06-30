@@ -1,9 +1,11 @@
 package com.ibm.ibmi.mcp.mapepire;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.lang.reflect.Field;
 import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -12,6 +14,7 @@ import org.junit.jupiter.api.Test;
 
 import com.ibm.ibmi.mcp.config.SourceConfig;
 
+import io.github.mapepire_ibmi.Pool;
 import io.github.mapepire_ibmi.types.DaemonServer;
 import io.github.mapepire_ibmi.types.PoolOptions;
 
@@ -103,5 +106,42 @@ class SourceManagerTest {
         "getPool should not block for the full shutdown grace period");
     manager.endQuery();
     shutdownThread.join(2000);
+  }
+
+  @Test
+  void closeContinuesWhenOnePoolEndFails() throws Exception {
+    SourceConfig source = new SourceConfig(
+        "ibmi", "h", 8076, "u", "p", false,
+        SourceConfig.DEFAULT_MAX_SIZE, SourceConfig.DEFAULT_STARTING_SIZE, Map.of());
+    PoolOptions options = SourceManager.poolOptionsFor(source);
+
+    AtomicBoolean secondPoolEnded = new AtomicBoolean(false);
+    Pool failingPool = new Pool(options) {
+      @Override
+      public void end() {
+        throw new RuntimeException("pool end failed");
+      }
+    };
+    Pool succeedingPool = new Pool(options) {
+      @Override
+      public void end() {
+        secondPoolEnded.set(true);
+      }
+    };
+
+    SourceManager manager = new SourceManager(Map.of());
+    registerPool(manager, "failing", failingPool);
+    registerPool(manager, "succeeding", succeedingPool);
+
+    assertDoesNotThrow(() -> manager.close(Duration.ZERO));
+    assertTrue(secondPoolEnded.get(), "remaining pools should still be closed");
+  }
+
+  @SuppressWarnings("unchecked")
+  private static void registerPool(SourceManager manager, String name, Pool pool) throws Exception {
+    Field poolsField = SourceManager.class.getDeclaredField("pools");
+    poolsField.setAccessible(true);
+    Map<String, Pool> pools = (Map<String, Pool>) poolsField.get(manager);
+    pools.put(name, pool);
   }
 }
