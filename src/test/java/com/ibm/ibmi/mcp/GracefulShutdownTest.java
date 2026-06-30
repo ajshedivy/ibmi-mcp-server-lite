@@ -33,6 +33,12 @@ class GracefulShutdownTest {
       "protocolVersion":"2024-11-05","capabilities":{},\
       "clientInfo":{"name":"shutdown-test","version":"0"}}}
       """;
+  private static final String INITIALIZED = """
+      {"jsonrpc":"2.0","method":"notifications/initialized"}
+      """;
+  private static final String TOOLS_LIST = """
+      {"jsonrpc":"2.0","id":2,"method":"tools/list"}
+      """;
 
   @Test
   void stdinEofExitsProcess(@TempDir Path tempDir) throws IOException, InterruptedException {
@@ -47,9 +53,13 @@ class GracefulShutdownTest {
     pb.redirectErrorStream(true);
     Process proc = pb.start();
 
-    proc.getOutputStream().write((INITIALIZE.strip() + "\n").getBytes(StandardCharsets.UTF_8));
-    proc.getOutputStream().flush();
-    proc.getOutputStream().close();
+
+    var stdin = proc.getOutputStream();
+    stdin.write((INITIALIZE.strip() + "\n").getBytes(StandardCharsets.UTF_8));
+    stdin.write((INITIALIZED.strip() + "\n").getBytes(StandardCharsets.UTF_8));
+    stdin.write((TOOLS_LIST.strip() + "\n").getBytes(StandardCharsets.UTF_8));
+    stdin.flush();
+    stdin.close();
 
     assertTrue(proc.waitFor(15, TimeUnit.SECONDS), "server did not exit after stdin EOF");
     assertEquals(0, proc.exitValue());
