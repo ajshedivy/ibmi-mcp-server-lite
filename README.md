@@ -33,6 +33,7 @@ cp .env.example .env   # then edit DB2i_HOST / DB2i_USER / DB2i_PASS
 
 # 3. Sanity check: list the toolsets defined in the sample YAML
 java -jar target/ibmi-mcp-server-lite-0.1.0.jar --tools tools/sample-tools.yaml --list-toolsets
+#    --tools also accepts a directory of YAML files or a glob (see docs/yaml-tools-reference.md)
 
 # 4. End-to-end smoke test over real stdio JSON-RPC (initialize → tools/list → tools/call)
 python3 scripts/smoke-test.py
@@ -114,12 +115,16 @@ Key semantics (full details in [docs/yaml-tools-reference.md](docs/yaml-tools-re
 
 | Flag | Env var | Description |
 |---|---|---|
-| `-t, --tools <path>` | `TOOLS_YAML_PATH` | Tools YAML file (required) |
+| `-t, --tools <path>` | `TOOLS_YAML_PATH` | Tools YAML file, directory, or glob (required) |
 | `-ts, --toolsets <a,b>` | `SELECTED_TOOLSETS` | Only register tools in these toolsets |
 | `--list-toolsets` | — | Print toolsets and exit |
 | `--env-file <path>` | — | `.env` file for `${VAR}` interpolation (default `./.env`) |
 | `--version` / `--help` | — | Print and exit |
 | — | `MCP_LOG_LEVEL` | `debug`, `info` (default), `warn`, `error` — logs go to **stderr** |
+| — | `YAML_MERGE_ARRAYS` | `true` (default) — concatenate toolset `tools` arrays on name collision |
+| — | `YAML_ALLOW_DUPLICATE_TOOLS` | `false` (default) — error on duplicate tool names across merged files |
+| — | `YAML_ALLOW_DUPLICATE_SOURCES` | `false` (default) — error on duplicate source names across merged files |
+| — | `YAML_VALIDATE_MERGED` | `true` (default) — post-merge tool→source and toolset→tool checks |
 
 ## Project layout
 
@@ -161,8 +166,8 @@ runtime gap on IBM i** — the one open blocker for running the server on the sy
 
 ## What's deliberately missing
 
-This MVP implements a faithful subset of the reference server. HTTP transport, multi-file
-YAML merge, hot reload, the full SQL security parser, structured per-call logging, and more
+This MVP implements a faithful subset of the reference server. HTTP transport, hot
+reload, the full SQL security parser, structured per-call logging, and more
 are sequenced into milestones — each tracked as a GitHub issue with pointers into the
 reference implementation — in the [**roadmap**](ROADMAP.md)
 ([milestones](https://github.com/ajshedivy/ibmi-mcp-server-lite/milestones) ·

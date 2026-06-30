@@ -169,10 +169,29 @@ A tool may belong to any number of toolsets. With `--toolsets a,b` (or
 no toolset are dropped while a selection is active. Without a selection, everything
 registers.
 
+## Multi-file loading
+
+`--tools` accepts a single YAML file, a directory, or a glob pattern (env:
+`TOOLS_YAML_PATH`). Every matching `*.yaml` / `*.yml` file is loaded and merged into one
+config. Files are de-duplicated and merged in deterministic order (sorted absolute paths).
+
+| Env var | Default | Effect |
+|---|---|---|
+| `YAML_MERGE_ARRAYS` | `true` | When two files define the same toolset name, concatenate their `tools` arrays; `false` replaces the whole toolset |
+| `YAML_ALLOW_DUPLICATE_TOOLS` | `false` | Duplicate tool names across files are a hard error; `true` lets the later file override (stderr warning) |
+| `YAML_ALLOW_DUPLICATE_SOURCES` | `false` | Duplicate source names across files are a hard error; `true` lets the later file override (stderr warning) |
+| `YAML_VALIDATE_MERGED` | `true` | After merge, validate tool→source and toolset→tool references |
+
+Only the literal string `true` enables a flag; any other value (including `false`) is
+treated as false. Per-file referential checks are deferred during merge so a tool in one
+file may reference a source or toolset member defined in another; post-merge validation
+(`YAML_VALIDATE_MERGED`) is the gate.
+
+Directory walks are recursive (`**/*.{yaml,yml}`). Glob patterns use Java NIO `PathMatcher`
+semantics (not shell brace expansion).
+
 ## Differences from the reference server (by design, for now)
 
-- Single YAML file only (no directory/glob merge, no hot reload).
-- One Mapepire job per source (no pool) — concurrent tool calls serialize.
 - Simplified read-only validation (regex strategy only; the reference's primary path is
   a full SQL tokenizer/parser).
 - No `typescript_tools` section, no built-in tools (`execute_sql`, `generate_sql`).

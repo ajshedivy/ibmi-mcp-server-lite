@@ -59,9 +59,11 @@ Grow the config loader from one static file into a multi-file, live-reloading co
 
 > **Why these together:** These are the config-area lifecycle issues that build on a stable runtime (M2): hot-reload's addTool/removeTool churn is far safer to implement once pooling and graceful shutdown exist, so it follows multi-file-yaml-merge, which establishes the merge/validation foundation hot-reload re-runs on every change. structured-request-logging is the observability companion that makes reload and concurrent-call behavior debuggable, so it rounds out the milestone. All three are 'intermediate' and have no dependsOn, but the internal order (merge → reload → logging) reflects their natural build dependency.
 
+**Implemented:**
+- ✅ [#10](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/10) - Multi-file YAML: accept a directory or glob for --tools and merge with reference duplicate rules
+
 | # | Issue | Difficulty | Estimate |
 |---|---|---|---|
-| [#10](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/10) | [Multi-file YAML: accept a directory or glob for --tools and merge with reference duplicate rules](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/10) | 🟡 intermediate | M (3-5 days) |
 | [#11](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/11) | [Hot-reload tools YAML on change (WatchService + notifyToolsListChanged)](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/11) | 🟡 intermediate | M (3-5 days) |
 | [#12](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/12) | [Structured per-call request logging (RequestContext)](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/12) | 🟡 intermediate | S (1-2 days) |
 
