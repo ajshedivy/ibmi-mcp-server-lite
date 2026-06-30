@@ -40,7 +40,9 @@ import org.yaml.snakeyaml.constructor.SafeConstructor;
  *
  * <p>Accepts a single YAML file, a directory of {@code *.yaml}/{@code *.yml} files, or a
  * glob pattern. Multiple files are merged with env-controlled duplicate handling
- * ({@link MergeOptions}). Hot-reload ({@code YAML_AUTO_RELOAD}) is not implemented.
+ * ({@link MergeOptions}). Hot-reload re-runs {@link #loadAll(String, MergeOptions)} when
+ * any resolved file changes ({@code YAML_AUTO_RELOAD}; see
+ * {@link com.ibm.ibmi.mcp.server.ToolsYamlWatcher}).
  */
 public final class YamlConfigLoader {
 
