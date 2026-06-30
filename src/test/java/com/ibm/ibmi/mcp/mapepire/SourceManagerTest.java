@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Duration;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.junit.jupiter.api.Test;
 
@@ -75,7 +76,7 @@ class SourceManagerTest {
     SourceManager manager = new SourceManager(Map.of());
     manager.beginQuery();
 
-    var getPoolFinished = new java.util.concurrent.atomic.AtomicBoolean(false);
+    var getPoolFinished = new AtomicBoolean(false);
     Thread getPoolThread = new Thread(() -> {
       try {
         manager.getPool("missing");

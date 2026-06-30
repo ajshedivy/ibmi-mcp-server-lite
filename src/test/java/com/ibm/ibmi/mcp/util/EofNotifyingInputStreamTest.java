@@ -25,7 +25,7 @@ class EofNotifyingInputStreamTest {
   }
 
   @Test
-  void eofCallbackDoesNotFireOnPartialReads() throws IOException {
+  void eofCallbackDoesNotFireOnFirstRead() throws IOException {
     AtomicInteger eofCount = new AtomicInteger();
     byte[] data = "x".getBytes(StandardCharsets.UTF_8);
     try (var in = new EofNotifyingInputStream(new ByteArrayInputStream(data), eofCount::incrementAndGet)) {
