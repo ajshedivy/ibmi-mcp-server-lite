@@ -267,7 +267,9 @@ public final class YamlConfigLoader {
     for (SqlToolConfig tool : incoming.values()) {
       if (target.containsKey(tool.name())) {
         if (!opts.allowDuplicateTools()) {
-          throw new ConfigException("Duplicate tool name: " + tool.name());
+          throw new ConfigException(
+              "Duplicate tool name: " + tool.name()
+                  + ". To allow duplicate tool names, set YAML_ALLOW_DUPLICATE_TOOLS=true");
         }
         log.warn("Overriding duplicate tool '{}'", tool.name());
       }
