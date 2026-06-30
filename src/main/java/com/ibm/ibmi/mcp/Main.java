@@ -1,7 +1,6 @@
 package com.ibm.ibmi.mcp;
 
 import java.io.InputStream;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
@@ -11,6 +10,7 @@ import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import com.ibm.ibmi.mcp.config.MergeOptions;
 import com.ibm.ibmi.mcp.config.ParameterConfig;
 import com.ibm.ibmi.mcp.config.SqlToolConfig;
 import com.ibm.ibmi.mcp.config.ToolsConfig;
@@ -26,6 +26,7 @@ import com.ibm.ibmi.mcp.util.ShutdownGuard;
  *
  * <pre>
  * java -jar ibmi-mcp-server-lite.jar --tools ./tools/sample-tools.yaml [--toolsets a,b]
+ * java -jar ibmi-mcp-server-lite.jar --tools ./tools/ [--toolsets a,b]
  * </pre>
  *
  * The MCP protocol runs over stdio (stdout is reserved for protocol frames; all logging
@@ -35,10 +36,10 @@ import com.ibm.ibmi.mcp.util.ShutdownGuard;
 public final class Main {
 
   private static final String USAGE = """
-      Usage: ibmi-mcp-server-lite --tools <tools.yaml> [options]
+      Usage: ibmi-mcp-server-lite --tools <file|directory|glob> [options]
 
       Options:
-        -t,  --tools <path>       Tools YAML file (env: TOOLS_YAML_PATH)
+        -t,  --tools <path>       Tools YAML file, directory, or glob (env: TOOLS_YAML_PATH)
         -ts, --toolsets <a,b>     Only register tools in these toolsets (env: SELECTED_TOOLSETS)
              --list-toolsets      Print toolsets defined in the YAML file and exit
              --list-tools         Print all enabled tools defined in the YAML file and exit
@@ -80,15 +81,18 @@ public final class Main {
     }
 
     if (toolsPath == null || toolsPath.isBlank()) {
-      fail("No tools YAML file given (use --tools or TOOLS_YAML_PATH)");
-    }
-    Path tools = Path.of(toolsPath);
-    if (!Files.isRegularFile(tools)) {
-      fail("Tools YAML file not found: " + tools.toAbsolutePath());
+      fail("No tools YAML path given (use --tools or TOOLS_YAML_PATH)");
     }
 
     Map<String, String> env = DotEnv.environment(Path.of(envFile));
-    ToolsConfig config = new YamlConfigLoader(env).load(tools);
+    MergeOptions mergeOpts = MergeOptions.fromEnv(env);
+    ToolsConfig config;
+    try {
+      config = new YamlConfigLoader(env).loadAll(toolsPath, mergeOpts);
+    } catch (com.ibm.ibmi.mcp.config.ConfigException e) {
+      fail(e.getMessage());
+      return;
+    }
 
     if (listToolsets) {
       printToolsets(config);
