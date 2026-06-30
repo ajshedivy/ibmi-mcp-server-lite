@@ -2,19 +2,26 @@ package com.ibm.ibmi.mcp.server;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.PrintStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 
+import com.ibm.ibmi.mcp.config.MergeOptions;
 import com.ibm.ibmi.mcp.config.ToolsConfig;
 import com.ibm.ibmi.mcp.config.YamlConfigLoader;
 
@@ -22,9 +29,17 @@ class ToolsYamlWatcherTest {
 
   private ToolsYamlWatcher watcher;
   private McpServerRunner.ServerHandle handle;
+  private final ByteArrayOutputStream stdoutCaptor = new ByteArrayOutputStream();
+  private final PrintStream originalOut = System.out;
+
+  @BeforeEach
+  void suppressStdout() {
+    System.setOut(new PrintStream(stdoutCaptor));
+  }
 
   @AfterEach
   void tearDown() {
+    System.setOut(originalOut);
     if (watcher != null) {
       watcher.close();
       watcher = null;
@@ -36,20 +51,30 @@ class ToolsYamlWatcherTest {
   }
 
   @Test
+  void start_throwsWhenParentDirectoryMissing() {
+    assertThrows(
+        IllegalArgumentException.class,
+        () -> ToolsYamlWatcher.start(List.of(Path.of("orphan.yaml")), 50, () -> {}));
+  }
+
+  @Test
   @Timeout(10)
   void fileChangeTriggersReload(@TempDir Path tempDir) throws Exception {
     Path yaml = tempDir.resolve("tools.yaml");
     Map<String, String> env = Map.of();
+    MergeOptions mergeOpts = MergeOptions.fromEnv(env);
     Files.writeString(yaml, yamlWithTools("tool_a"));
 
-    ToolsConfig config = new YamlConfigLoader(env).load(yaml);
-    handle = McpServerRunner.start(config, Set.of());
+    handle = startFromYaml(yaml, env);
     AtomicInteger reloadCount = new AtomicInteger();
 
-    watcher = ToolsYamlWatcher.start(yaml, 50, () -> {
-      reloadCount.incrementAndGet();
-      McpServerRunner.reload(handle, yaml, env, Set.of());
-    });
+    watcher = ToolsYamlWatcher.start(
+        List.of(yaml),
+        50,
+        () -> {
+          reloadCount.incrementAndGet();
+          McpServerRunner.reload(handle, yaml.toString(), env, mergeOpts, Set.of());
+        });
 
     Files.writeString(yaml, yamlWithTools("tool_a", "tool_b"));
     await(() -> handle.registeredTools().size() == 2, 3_000);
@@ -60,25 +85,26 @@ class ToolsYamlWatcherTest {
 
   @Test
   @Timeout(10)
-  void rapidWritesCoalesceIntoFewReloads(@TempDir Path tempDir) throws Exception {
+  void rapidWritesCoalesceIntoSingleReload(@TempDir Path tempDir) throws Exception {
     Path yaml = tempDir.resolve("tools.yaml");
-    Map<String, String> env = Map.of();
     Files.writeString(yaml, yamlWithTools("tool_a"));
-
-    ToolsConfig config = new YamlConfigLoader(env).load(yaml);
-    handle = McpServerRunner.start(config, Set.of());
     AtomicInteger reloadCount = new AtomicInteger();
 
-    watcher = ToolsYamlWatcher.start(yaml, 100, reloadCount::incrementAndGet);
+    watcher = ToolsYamlWatcher.start(
+        List.of(yaml), ToolsYamlWatcher.DEFAULT_DEBOUNCE_MS, reloadCount::incrementAndGet);
 
     for (int i = 0; i < 5; i++) {
       Files.writeString(yaml, yamlWithTools("tool_a", "tool_burst_" + i));
-      Thread.sleep(15);
+      Thread.sleep(20);
     }
-    Thread.sleep(500);
+    await(() -> reloadCount.get() >= 1, 5_000);
+    int countAfterReload = reloadCount.get();
+    Thread.sleep(ToolsYamlWatcher.DEFAULT_DEBOUNCE_MS + 100);
 
-    assertTrue(reloadCount.get() < 5,
-        "Expected debounce to coalesce rapid writes, got " + reloadCount.get() + " reloads");
+    assertEquals(1, countAfterReload,
+        "Expected debounce to coalesce rapid writes into one reload");
+    assertEquals(countAfterReload, reloadCount.get(),
+        "Expected no additional reloads after burst settled");
   }
 
   @Test
@@ -87,9 +113,16 @@ class ToolsYamlWatcherTest {
     Files.writeString(yaml, yamlWithTools("tool_a"));
     AtomicInteger reloadCount = new AtomicInteger();
 
-    watcher = ToolsYamlWatcher.start(yaml, 50, reloadCount::incrementAndGet);
+    watcher = ToolsYamlWatcher.start(List.of(yaml), 50, reloadCount::incrementAndGet);
     watcher.close();
     watcher.close();
+  }
+
+  private static McpServerRunner.ServerHandle startFromYaml(Path yaml, Map<String, String> env) {
+    ToolsConfig config = new YamlConfigLoader(env).load(yaml);
+    McpServerRunner.ServerHandle[] slot = new McpServerRunner.ServerHandle[1];
+    McpServerRunner.start(config, Set.of(), new ByteArrayInputStream(new byte[0]), slot);
+    return slot[0];
   }
 
   private static void await(java.util.function.BooleanSupplier condition, long timeoutMs)
