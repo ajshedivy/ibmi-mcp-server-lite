@@ -124,9 +124,8 @@ public final class Main {
 
     InputStream stdin = new EofNotifyingInputStream(
         System.in, () -> new Thread(shutdown, "stdin-eof").start());
-    handle[0] = McpServerRunner.start(config, selected, stdin);
-
     Runtime.getRuntime().addShutdownHook(new Thread(shutdown, "shutdown-cleanup"));
+    handle[0] = McpServerRunner.start(config, selected, stdin, handle);
     shutdownLatch.await();
   }
 

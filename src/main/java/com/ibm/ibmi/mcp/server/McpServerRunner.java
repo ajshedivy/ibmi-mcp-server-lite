@@ -3,6 +3,7 @@ package com.ibm.ibmi.mcp.server;
 import java.io.InputStream;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,22 +39,47 @@ public final class McpServerRunner {
   public static final String SERVER_NAME = "ibmi-mcp-server-lite";
   public static final String SERVER_VERSION = "0.1.0";
 
-  /** Holds the running server and the connection manager so both can be closed on exit. */
-  public record ServerHandle(McpSyncServer server, SourceManager sources) implements AutoCloseable {
+  /**
+   * Holds the connection manager and (once built) the MCP server so both can be closed on exit.
+   * Published to {@code handleSlot} before the stdio transport starts reading stdin.
+   */
+  public static final class ServerHandle implements AutoCloseable {
+
+    private final SourceManager sources;
+    private volatile McpSyncServer server;
+    private final AtomicBoolean closed = new AtomicBoolean(false);
+
+    ServerHandle(SourceManager sources) {
+      this.sources = sources;
+    }
+
+    void attachServer(McpSyncServer server) {
+      this.server = server;
+    }
+
     @Override
     public void close() {
+      if (!closed.compareAndSet(false, true)) {
+        return;
+      }
       sources.close();
-      server.close();
+      McpSyncServer active = server;
+      if (active != null) {
+        active.close();
+      }
     }
   }
 
   private McpServerRunner() {}
 
-  public static ServerHandle start(ToolsConfig config, Set<String> selectedToolsets, InputStream stdin) {
+  public static ServerHandle start(ToolsConfig config, Set<String> selectedToolsets, InputStream stdin,
+      ServerHandle[] handleSlot) {
     ObjectMapper mapper = new ObjectMapper();
     McpJsonMapper jsonMapper = new JacksonMcpJsonMapper(mapper);
     JsonSchemaBuilder schemaBuilder = new JsonSchemaBuilder(mapper);
     SourceManager sources = new SourceManager(config.sources());
+    ServerHandle handle = new ServerHandle(sources);
+    handleSlot[0] = handle;
 
     Map<String, SqlToolConfig> selected = config.selectTools(selectedToolsets);
     if (selected.isEmpty()) {
@@ -71,6 +97,7 @@ public final class McpServerRunner {
         .serverInfo(SERVER_NAME, SERVER_VERSION)
         .capabilities(ServerCapabilities.builder().tools(true).logging().build())
         .build();
+    handle.attachServer(server);
 
     String outputSchema = schemaBuilder.buildOutputSchema();
 
@@ -93,7 +120,7 @@ public final class McpServerRunner {
     }
 
     log.info("{} v{} ready on stdio with {} tools", SERVER_NAME, SERVER_VERSION, selected.size());
-    return new ServerHandle(server, sources);
+    return handle;
   }
 
   /**

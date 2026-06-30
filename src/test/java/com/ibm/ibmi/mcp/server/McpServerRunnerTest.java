@@ -27,7 +27,8 @@ class McpServerRunnerTest {
         .serverInfo("test", "0")
         .capabilities(ServerCapabilities.builder().build())
         .build();
-    McpServerRunner.ServerHandle handle = new McpServerRunner.ServerHandle(server, new SourceManager(Map.of()));
+    McpServerRunner.ServerHandle handle = new McpServerRunner.ServerHandle(new SourceManager(Map.of()));
+    handle.attachServer(server);
     assertDoesNotThrow(() -> {
       handle.close();
       handle.close();
