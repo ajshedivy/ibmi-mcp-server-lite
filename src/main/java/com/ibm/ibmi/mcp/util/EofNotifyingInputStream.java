@@ -25,20 +25,20 @@ public final class EofNotifyingInputStream extends InputStream {
 
   @Override
   public int read() throws IOException {
-    int b = delegate.read();
-    if (b == -1) {
+    int readResult = delegate.read();
+    if (readResult == -1) {
       signalEof();
     }
-    return b;
+    return readResult;
   }
 
   @Override
   public int read(byte[] buf, int off, int len) throws IOException {
-    int n = delegate.read(buf, off, len);
-    if (n == -1) {
+    int bytesRead = delegate.read(buf, off, len);
+    if (bytesRead == -1) {
       signalEof();
     }
-    return n;
+    return bytesRead;
   }
 
   @Override
