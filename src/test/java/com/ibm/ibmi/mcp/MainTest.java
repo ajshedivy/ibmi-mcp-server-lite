@@ -79,4 +79,34 @@ class MainTest {
     // Validates that the parameter schema prints the [required] modifier
     assertTrue(output.contains("[required]"), "Console output should contain the [required] parameter marker");
   }
+
+  @Test
+  void testMainListToolsetsFromDirectory(@TempDir Path tempDir) throws Exception {
+    Path sources = tempDir.resolve("sources.yaml");
+    Files.writeString(sources, """
+        sources:
+          ibmi-system:
+            host: localhost
+            user: dummy
+            password: dummy
+        """);
+    Path tools = tempDir.resolve("tools.yaml");
+    Files.writeString(tools, """
+        tools:
+          active_jobs:
+            source: ibmi-system
+            description: "Active jobs"
+            statement: SELECT 1 FROM SYSIBM.SYSDUMMY1
+        toolsets:
+          performance:
+            title: "Performance"
+            tools: [active_jobs]
+        """);
+
+    Main.main(new String[] {"--tools", tempDir.toString(), "--list-toolsets"});
+
+    String output = outputStreamCaptor.toString();
+    assertTrue(output.contains("performance"), "Console output should list merged toolset");
+    assertTrue(output.contains("active_jobs"), "Console output should list merged tool");
+  }
 }

@@ -445,6 +445,7 @@ class YamlConfigLoaderTest {
     ConfigException e = assertThrows(
         ConfigException.class, () -> loader.loadAll(dir.toString(), MergeOptions.fromEnv(Map.of())));
     assertTrue(e.getMessage().contains("Duplicate tool name: query_one"));
+    assertTrue(e.getMessage().contains("YAML_ALLOW_DUPLICATE_TOOLS=true"));
   }
 
   @Test
@@ -612,5 +613,96 @@ class YamlConfigLoaderTest {
 
     assertEquals(viaLoad.sources().keySet(), viaLoadAll.sources().keySet());
     assertEquals(viaLoad.tools().keySet(), viaLoadAll.tools().keySet());
+  }
+
+  @Test
+  void loadsNestedDirectoryAndYmlExtension(@TempDir Path dir) throws IOException {
+    Path nested = dir.resolve("nested");
+    Files.createDirectories(nested);
+    write(dir, "sources.yaml", MINIMAL_SOURCE);
+    write(nested, "tools.yml", MINIMAL_TOOL);
+
+    ToolsConfig config = loader.loadAll(dir.toString(), MergeOptions.fromEnv(Map.of()));
+
+    assertTrue(config.sources().containsKey("shared"));
+    assertTrue(config.tools().containsKey("query_one"));
+  }
+
+  @Test
+  void mergeOrderIsDeterministicLastWins(@TempDir Path dir) throws IOException {
+    write(dir, "a.yaml", MINIMAL_SOURCE + """
+        tools:
+          query_one:
+            source: shared
+            description: from-a
+            statement: SELECT 1 FROM SYSIBM.SYSDUMMY1
+        """);
+    write(dir, "z.yaml", """
+        tools:
+          query_one:
+            source: shared
+            description: from-z
+            statement: SELECT 2 FROM SYSIBM.SYSDUMMY1
+        """);
+
+    Map<String, String> env = Map.of("YAML_ALLOW_DUPLICATE_TOOLS", "true");
+    YamlConfigLoader mergeLoader = new YamlConfigLoader(env);
+    ToolsConfig config = mergeLoader.loadAll(dir.toString(), MergeOptions.fromEnv(env));
+
+    assertEquals("from-z", config.tools().get("query_one").description());
+  }
+
+  @Test
+  void resolveToolPathsSortsByAbsolutePath(@TempDir Path dir) throws IOException {
+    write(dir, "z.yaml", MINIMAL_SOURCE);
+    write(dir, "a.yaml", MINIMAL_TOOL);
+
+    List<Path> paths = YamlConfigLoader.resolveToolPaths(dir.toString());
+
+    assertEquals(2, paths.size());
+    assertTrue(paths.get(0).toString().endsWith("a.yaml"));
+    assertTrue(paths.get(1).toString().endsWith("z.yaml"));
+  }
+
+  @Test
+  void crossFileToolsetReference(@TempDir Path dir) throws IOException {
+    write(dir, "tools.yaml", MINIMAL_SOURCE + """
+        tools:
+          query_one:
+            source: shared
+            description: d
+            statement: SELECT 1 FROM SYSIBM.SYSDUMMY1
+        """);
+    write(dir, "toolsets.yaml", """
+        toolsets:
+          ops:
+            tools: [query_one]
+        """);
+
+    ToolsConfig config = loader.loadAll(dir.toString(), MergeOptions.fromEnv(Map.of()));
+
+    assertEquals(List.of("query_one"), config.toolsets().get("ops").tools());
+  }
+
+  @Test
+  void validateMergedFalseSkipsPostMergeChecks(@TempDir Path dir) throws IOException {
+    write(dir, "tools.yaml", """
+        tools:
+          query_one:
+            source: missing
+            description: d
+            statement: SELECT 1 FROM SYSIBM.SYSDUMMY1
+        toolsets:
+          ops:
+            tools: [ghost_tool]
+        """);
+    write(dir, "other.yaml", MINIMAL_SOURCE);
+
+    Map<String, String> env = Map.of("YAML_VALIDATE_MERGED", "false");
+    YamlConfigLoader mergeLoader = new YamlConfigLoader(env);
+    ToolsConfig config = mergeLoader.loadAll(dir.toString(), MergeOptions.fromEnv(env));
+
+    assertTrue(config.tools().containsKey("query_one"));
+    assertTrue(config.toolsets().containsKey("ops"));
   }
 }
