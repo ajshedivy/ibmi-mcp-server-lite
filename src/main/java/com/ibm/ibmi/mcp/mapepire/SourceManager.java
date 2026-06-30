@@ -1,8 +1,10 @@
 package com.ibm.ibmi.mcp.mapepire;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,11 +23,24 @@ public final class SourceManager implements AutoCloseable {
 
   private static final Logger log = LoggerFactory.getLogger(SourceManager.class);
 
+  static final Duration SHUTDOWN_GRACE = Duration.ofSeconds(5);
+
   private final Map<String, SourceConfig> sources;
   private final Map<String, Pool> pools = new ConcurrentHashMap<>();
+  private final AtomicInteger inFlightQueries = new AtomicInteger(0);
 
   public SourceManager(Map<String, SourceConfig> sources) {
     this.sources = sources;
+  }
+
+  /** Called when a tool query starts; paired with {@link #endQuery()}. */
+  public void beginQuery() {
+    inFlightQueries.incrementAndGet();
+  }
+
+  /** Called when a tool query finishes; paired with {@link #beginQuery()}. */
+  public void endQuery() {
+    inFlightQueries.decrementAndGet();
   }
 
   /** Returns an initialized pool for the named source, connecting on first use. */
@@ -90,14 +105,40 @@ public final class SourceManager implements AutoCloseable {
   }
 
   @Override
-  public synchronized void close() {
-    pools.forEach((name, pool) -> {
-      try {
-        pool.end();
-      } catch (Exception e) {
-        log.warn("Error ending pool for source '{}': {}", name, e.getMessage());
+  public void close() {
+    close(SHUTDOWN_GRACE);
+  }
+
+  void close(Duration grace) {
+    // Do not hold the instance monitor while sleeping: getPool() is synchronized and
+    // in-flight queries need it after beginQuery() to make progress toward endQuery().
+    awaitInFlight(grace);
+    synchronized (this) {
+      pools.forEach((name, pool) -> {
+        try {
+          pool.end();
+        } catch (Exception e) {
+          log.warn("Error ending pool for source '{}': {}", name, e.getMessage());
+        }
+      });
+      pools.clear();
+    }
+  }
+
+  private void awaitInFlight(Duration grace) {
+    long deadline = System.nanoTime() + grace.toNanos();
+    while (inFlightQueries.get() > 0) {
+      if (System.nanoTime() >= deadline) {
+        log.warn("Shutdown grace elapsed with {} in-flight queries", inFlightQueries.get());
+        return;
       }
-    });
-    pools.clear();
+      try {
+        Thread.sleep(50);
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        log.warn("Interrupted while waiting for in-flight queries");
+        return;
+      }
+    }
   }
 }

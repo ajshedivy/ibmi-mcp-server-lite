@@ -1,5 +1,6 @@
 package com.ibm.ibmi.mcp;
 
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Arrays;
@@ -8,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.ibm.ibmi.mcp.config.ParameterConfig;
 import com.ibm.ibmi.mcp.config.SqlToolConfig;
@@ -16,6 +18,8 @@ import com.ibm.ibmi.mcp.config.ToolsetConfig;
 import com.ibm.ibmi.mcp.config.YamlConfigLoader;
 import com.ibm.ibmi.mcp.server.McpServerRunner;
 import com.ibm.ibmi.mcp.util.DotEnv;
+import com.ibm.ibmi.mcp.util.EofNotifyingInputStream;
+import com.ibm.ibmi.mcp.util.ShutdownGuard;
 
 /**
  * Entry point. Usage:
@@ -102,12 +106,21 @@ public final class Main {
           .filter(s -> !s.isEmpty()).forEach(selected::add);
     }
 
-    McpServerRunner.ServerHandle handle = McpServerRunner.start(config, selected);
-    Runtime.getRuntime().addShutdownHook(new Thread(handle::close, "shutdown-cleanup"));
+    CountDownLatch shutdownLatch = new CountDownLatch(1);
+    AtomicBoolean shuttingDown = new AtomicBoolean(false);
+    McpServerRunner.ServerHandle[] handle = new McpServerRunner.ServerHandle[1];
 
-    // The stdio transport serves on background threads; keep the process alive until the
-    // client kills it (standard lifecycle for stdio MCP servers).
-    new CountDownLatch(1).await();
+    Runnable shutdown = ShutdownGuard.once(shuttingDown, shutdownLatch, () -> {
+      if (handle[0] != null) {
+        handle[0].close();
+      }
+    });
+
+    InputStream stdin = new EofNotifyingInputStream(
+        System.in, () -> new Thread(shutdown, "stdin-eof").start());
+    Runtime.getRuntime().addShutdownHook(new Thread(shutdown, "shutdown-cleanup"));
+    handle[0] = McpServerRunner.start(config, selected, stdin, handle);
+    shutdownLatch.await();
   }
 
   private static void printToolsets(ToolsConfig config) {
