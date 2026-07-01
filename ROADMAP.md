@@ -62,10 +62,10 @@ Grow the config loader from one static file into a multi-file, live-reloading co
 **Implemented:**
 - ✅ [#10](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/10) — Multi-file YAML: accept a directory or glob for `--tools` and merge with reference duplicate rules
 - ✅ [#11](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/11) — Hot-reload tools YAML on change (`WatchService` + `notifyToolsListChanged`, `YAML_AUTO_RELOAD`)
+- ✅ [#12](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/12) - Structured per-call request logging (RequestContext)
 
 | # | Issue | Difficulty | Estimate |
 |---|---|---|---|
-| [#12](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/12) | [Structured per-call request logging (RequestContext)](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/12) | 🟡 intermediate | S (1-2 days) |
 
 ## M4 — SQL Security Hardening
 
