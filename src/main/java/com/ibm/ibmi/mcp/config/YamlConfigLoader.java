@@ -1,11 +1,17 @@
 package com.ibm.ibmi.mcp.config;
 
 import java.io.IOException;
+import java.nio.file.FileSystems;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.PathMatcher;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
@@ -32,9 +38,9 @@ import org.yaml.snakeyaml.constructor.SafeConstructor;
  *       {@code statement}.
  * </ul>
  *
- * <p>TODO: the reference server also accepts a directory or glob of YAML files and
- * merges them (env-controlled duplicate handling), and hot-reloads on change
- * ({@code YAML_AUTO_RELOAD}). This MVP loads a single file only.
+ * <p>Accepts a single YAML file, a directory of {@code *.yaml}/{@code *.yml} files, or a
+ * glob pattern. Multiple files are merged with env-controlled duplicate handling
+ * ({@link MergeOptions}). Hot-reload ({@code YAML_AUTO_RELOAD}) is not implemented.
  */
 public final class YamlConfigLoader {
 
@@ -48,17 +54,44 @@ public final class YamlConfigLoader {
   }
 
   public ToolsConfig load(Path yamlFile) {
-    String text;
-    try {
-      text = Files.readString(yamlFile);
-    } catch (IOException e) {
-      throw new ConfigException("Cannot read tools YAML file: " + yamlFile, e);
+    return parse(readFile(yamlFile), true);
+  }
+
+  /** Loads and merges every YAML file resolved from a file, directory, or glob path. */
+  public ToolsConfig loadAll(String toolsPath, MergeOptions opts) {
+    List<Path> files = resolveToolPaths(toolsPath);
+    return loadAll(files, opts);
+  }
+
+  /** Loads and merges the given YAML files in order. */
+  public ToolsConfig loadAll(List<Path> files, MergeOptions opts) {
+    if (files.isEmpty()) {
+      throw new ConfigException("No tools YAML files to load");
     }
-    return parse(text);
+    if (files.size() == 1) {
+      return parse(readFile(files.get(0)), opts.validateMerged());
+    }
+
+    log.info("Loading and merging {} YAML files", files.size());
+    List<ToolsConfig> configs = new ArrayList<>(files.size());
+    for (Path file : files) {
+      log.debug("Loading {}", file);
+      configs.add(parse(readFile(file), false));
+    }
+    ToolsConfig merged = merge(configs, opts);
+    if (opts.validateMerged()) {
+      validateReferences(merged);
+    }
+    return merged;
   }
 
   /** Parses YAML text (after env interpolation) into a validated config. */
   public ToolsConfig parse(String yamlText) {
+    return parse(yamlText, true);
+  }
+
+  /** Parses YAML text; reference validation is optional for multi-file merge. */
+  ToolsConfig parse(String yamlText, boolean validateReferences) {
     String interpolated = interpolateEnvVars(yamlText);
     Yaml yaml = new Yaml(new SafeConstructor(new LoaderOptions()));
     Object root = yaml.load(interpolated);
@@ -77,8 +110,248 @@ public final class YamlConfigLoader {
     }
 
     ToolsConfig config = new ToolsConfig(sources, tools, toolsets);
-    validateReferences(config);
+    if (validateReferences) {
+      validateReferences(config);
+    }
     return config;
+  }
+
+  static List<Path> resolveToolPaths(String toolsPath) {
+    Path path = Path.of(toolsPath);
+    List<Path> resolved;
+    if (Files.isRegularFile(path)) {
+      log.debug("Resolved tools path as file: {}", path);
+      resolved = List.of(path);
+    } else if (Files.isDirectory(path)) {
+      log.debug("Resolved tools path as directory: {}", path);
+      resolved = findYamlFilesInDirectory(path);
+      if (resolved.isEmpty()) {
+        throw new ConfigException(
+            "No YAML files found in directory: " + path.toAbsolutePath());
+      }
+    } else if (isGlobPattern(toolsPath)) {
+      log.debug("Resolved tools path as glob: {}", toolsPath);
+      resolved = findYamlFilesMatchingGlob(toolsPath);
+      if (resolved.isEmpty()) {
+        throw new ConfigException("No files found matching pattern: " + toolsPath);
+      }
+    } else {
+      throw new ConfigException("Tools YAML path not found: " + path.toAbsolutePath());
+    }
+
+    List<Path> deduped = new ArrayList<>(new LinkedHashSet<>(
+        resolved.stream()
+            .map(Path::toAbsolutePath)
+            .sorted()
+            .toList()));
+    log.info("Resolved {} tools YAML file(s): {}", deduped.size(), deduped);
+    return deduped;
+  }
+
+  private static boolean isGlobPattern(String toolsPath) {
+    return toolsPath.indexOf('*') >= 0
+        || toolsPath.indexOf('?') >= 0
+        || toolsPath.indexOf('[') >= 0
+        || toolsPath.indexOf('{') >= 0;
+  }
+
+  private static List<Path> findYamlFilesInDirectory(Path dir) {
+    try {
+      List<Path> files = new ArrayList<>();
+      Files.walkFileTree(dir, new SimpleFileVisitor<>() {
+        @Override
+        public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
+          if (Files.isRegularFile(file) && isYamlFile(file)) {
+            files.add(file);
+          }
+          return FileVisitResult.CONTINUE;
+        }
+      });
+      return files;
+    } catch (IOException e) {
+      throw new ConfigException("Cannot read tools YAML directory: " + dir, e);
+    }
+  }
+
+  private static List<Path> findYamlFilesMatchingGlob(String pattern) {
+    List<String> patterns = expandGlobPattern(pattern);
+    Path walkRoot = globWalkRoot(pattern);
+    if (!Files.exists(walkRoot)) {
+      return List.of();
+    }
+
+    List<PathMatcher> matchers = patterns.stream()
+        .map(p -> FileSystems.getDefault().getPathMatcher("glob:" + p))
+        .toList();
+
+    try {
+      List<Path> files = new ArrayList<>();
+      Path normalizedRoot = walkRoot.toAbsolutePath().normalize();
+      Files.walkFileTree(walkRoot, new SimpleFileVisitor<>() {
+        @Override
+        public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
+          if (!Files.isRegularFile(file) || !isYamlFile(file)) {
+            return FileVisitResult.CONTINUE;
+          }
+          for (PathMatcher matcher : matchers) {
+            if (matchesGlob(matcher, normalizedRoot, file)) {
+              files.add(file);
+              break;
+            }
+          }
+          return FileVisitResult.CONTINUE;
+        }
+      });
+      return files;
+    } catch (IOException e) {
+      throw new ConfigException("Cannot resolve tools YAML glob: " + pattern, e);
+    }
+  }
+
+  /**
+   * Expands {@code {a,b}} brace alternation and adds a flattened variant for each
+   * {@code **} directory segment so root-level files match (Java {@link PathMatcher} treats
+   * {@code **} as one-or-more directories; the reference server's glob matches zero-or-more).
+   */
+  static List<String> expandGlobPattern(String pattern) {
+    LinkedHashSet<String> expanded = new LinkedHashSet<>();
+    for (String braceVariant : expandBraceAlternation(pattern)) {
+      expanded.add(braceVariant);
+      if (braceVariant.contains("/**/")) {
+        expanded.add(braceVariant.replace("/**/", "/"));
+      }
+    }
+    return List.copyOf(expanded);
+  }
+
+  /** Recursively expands the first {@code {alt1,alt2,...}} group in a glob pattern. */
+  static List<String> expandBraceAlternation(String pattern) {
+    int open = pattern.indexOf('{');
+    if (open < 0) {
+      return List.of(pattern);
+    }
+    int close = pattern.indexOf('}', open);
+    if (close < 0) {
+      return List.of(pattern);
+    }
+    String prefix = pattern.substring(0, open);
+    String suffix = pattern.substring(close + 1);
+    String[] alternatives = pattern.substring(open + 1, close).split(",");
+    List<String> results = new ArrayList<>();
+    for (String alt : alternatives) {
+      results.addAll(expandBraceAlternation(prefix + alt.trim() + suffix));
+    }
+    return results;
+  }
+
+  private static boolean matchesGlob(PathMatcher matcher, Path walkRoot, Path file) {
+    Path normalized = file.toAbsolutePath().normalize();
+    if (matcher.matches(normalized) || matcher.matches(file)) {
+      return true;
+    }
+    if (normalized.startsWith(walkRoot)) {
+      return matcher.matches(walkRoot.relativize(normalized));
+    }
+    return false;
+  }
+
+  private static Path globWalkRoot(String pattern) {
+    int globStart = indexOfFirstGlobChar(pattern);
+    if (globStart <= 0) {
+      return Path.of(".");
+    }
+    String beforeGlob = pattern.substring(0, globStart);
+    int lastSep = Math.max(beforeGlob.lastIndexOf('/'), beforeGlob.lastIndexOf('\\'));
+    if (lastSep < 0) {
+      return Path.of(".");
+    }
+    String rootPart = beforeGlob.substring(0, lastSep);
+    return rootPart.isEmpty() ? Path.of(".") : Path.of(rootPart);
+  }
+
+  private static int indexOfFirstGlobChar(String pattern) {
+    for (int i = 0; i < pattern.length(); i++) {
+      char c = pattern.charAt(i);
+      if (c == '*' || c == '?' || c == '[' || c == '{') {
+        return i;
+      }
+    }
+    return -1;
+  }
+
+  private static boolean isYamlFile(Path file) {
+    String name = file.getFileName().toString().toLowerCase();
+    return name.endsWith(".yaml") || name.endsWith(".yml");
+  }
+
+  private String readFile(Path yamlFile) {
+    try {
+      return Files.readString(yamlFile);
+    } catch (IOException e) {
+      throw new ConfigException("Cannot read tools YAML file: " + yamlFile, e);
+    }
+  }
+
+  private ToolsConfig merge(List<ToolsConfig> configs, MergeOptions opts) {
+    Map<String, SourceConfig> sources = new LinkedHashMap<>();
+    Map<String, SqlToolConfig> tools = new LinkedHashMap<>();
+    Map<String, ToolsetConfig> toolsets = new LinkedHashMap<>();
+
+    for (ToolsConfig config : configs) {
+      mergeSources(sources, config.sources(), opts);
+      mergeTools(tools, config.tools(), opts);
+      mergeToolsets(toolsets, config.toolsets(), opts);
+    }
+    return new ToolsConfig(sources, tools, toolsets);
+  }
+
+  private void mergeSources(
+      Map<String, SourceConfig> target, Map<String, SourceConfig> incoming, MergeOptions opts) {
+    for (SourceConfig source : incoming.values()) {
+      if (target.containsKey(source.name())) {
+        if (!opts.allowDuplicateSources()) {
+          throw new ConfigException(
+              "Duplicate source name: " + source.name()
+                  + ". To allow duplicate source names, set YAML_ALLOW_DUPLICATE_SOURCES=true");
+        }
+        log.warn("Overriding duplicate source '{}'", source.name());
+      }
+      target.put(source.name(), source);
+    }
+  }
+
+  private void mergeTools(
+      Map<String, SqlToolConfig> target, Map<String, SqlToolConfig> incoming, MergeOptions opts) {
+    for (SqlToolConfig tool : incoming.values()) {
+      if (target.containsKey(tool.name())) {
+        if (!opts.allowDuplicateTools()) {
+          throw new ConfigException(
+              "Duplicate tool name: " + tool.name()
+                  + ". To allow duplicate tool names, set YAML_ALLOW_DUPLICATE_TOOLS=true");
+        }
+        log.warn("Overriding duplicate tool '{}'", tool.name());
+      }
+      target.put(tool.name(), tool);
+    }
+  }
+
+  private void mergeToolsets(
+      Map<String, ToolsetConfig> target, Map<String, ToolsetConfig> incoming, MergeOptions opts) {
+    for (ToolsetConfig toolset : incoming.values()) {
+      ToolsetConfig existing = target.get(toolset.name());
+      if (existing == null) {
+        target.put(toolset.name(), toolset);
+        continue;
+      }
+      if (opts.mergeArrays()) {
+        List<String> mergedTools = new ArrayList<>(existing.tools());
+        mergedTools.addAll(toolset.tools());
+        target.put(toolset.name(), new ToolsetConfig(
+            existing.name(), existing.title(), existing.description(), List.copyOf(mergedTools)));
+      } else {
+        target.put(toolset.name(), toolset);
+      }
+    }
   }
 
   /** {@code ${VAR}} → value from environment; unknown variables stay verbatim. */
