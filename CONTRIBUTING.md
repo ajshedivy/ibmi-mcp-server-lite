@@ -139,7 +139,7 @@ user input — they become parameterized-query binds and are never spliced into 
 
 With the server running (`java -jar ... --tools tools/sample-tools.yaml`), saving the
 YAML file updates the live registry when `YAML_AUTO_RELOAD` is on (default). Watch stderr
-for `YAML file changed` and `YAML reload applied`. A bad save logs an error and leaves
+for `YAML file(s) changed` and `YAML reload applied`. A bad save logs an error and leaves
 the previous tools intact.
 
 `sandbox/mcp-cli` spawns a fresh server per command, so use it for `tools/call` smoke

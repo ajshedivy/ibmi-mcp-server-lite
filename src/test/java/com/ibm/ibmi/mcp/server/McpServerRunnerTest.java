@@ -22,6 +22,7 @@ import java.util.stream.Collectors;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -181,6 +182,49 @@ class McpServerRunnerTest {
   }
 
   @Test
+  @Timeout(10)
+  void attachYamlWatcher_directoryChangeTriggersMergedReload(@TempDir Path tempDir)
+      throws Exception {
+    Path toolsA = tempDir.resolve("a.yaml");
+    Path toolsB = tempDir.resolve("b.yaml");
+    Files.writeString(toolsA, yamlWithTools("tool_a"));
+    Files.writeString(toolsB, yamlWithToolsOnly("tool_b"));
+    Map<String, String> env = Map.of();
+    MergeOptions mergeOpts = MergeOptions.fromEnv(env);
+    String toolsPath = tempDir.toString();
+
+    handle = startFromDirectory(tempDir, env);
+    assertEquals(Set.of("tool_a", "tool_b"), toolNames(handle));
+
+    McpServerRunner.attachYamlWatcher(handle, toolsPath, env, mergeOpts, Set.of());
+
+    Files.writeString(toolsA, yamlWithTools("tool_a", "tool_c"));
+    await(() -> handle.registeredTools().size() == 3, 5_000);
+    assertEquals(Set.of("tool_a", "tool_b", "tool_c"), toolNames(handle));
+  }
+
+  @Test
+  @Timeout(10)
+  void attachYamlWatcher_globChangeTriggersMergedReload(@TempDir Path tempDir) throws Exception {
+    Path toolsA = tempDir.resolve("a.yaml");
+    Path toolsB = tempDir.resolve("b.yaml");
+    Files.writeString(toolsA, yamlWithTools("tool_a"));
+    Files.writeString(toolsB, yamlWithToolsOnly("tool_b"));
+    Map<String, String> env = Map.of();
+    MergeOptions mergeOpts = MergeOptions.fromEnv(env);
+    String glob = tempDir.toString() + "/*.yaml";
+
+    handle = startFromGlob(glob, env);
+    assertEquals(Set.of("tool_a", "tool_b"), toolNames(handle));
+
+    McpServerRunner.attachYamlWatcher(handle, glob, env, mergeOpts, Set.of());
+
+    Files.writeString(toolsB, yamlWithToolsOnly("tool_b", "tool_d"));
+    await(() -> handle.registeredTools().containsKey("tool_d"), 5_000);
+    assertEquals(Set.of("tool_a", "tool_b", "tool_d"), toolNames(handle));
+  }
+
+  @Test
   void reload_updatesMergedToolsFromDirectory(@TempDir Path tempDir) throws Exception {
     Path toolsA = tempDir.resolve("a.yaml");
     Path toolsB = tempDir.resolve("b.yaml");
@@ -318,6 +362,23 @@ class McpServerRunnerTest {
   private static McpServerRunner.ServerHandle startFromDirectory(Path dir, Map<String, String> env) {
     ToolsConfig config = new YamlConfigLoader(env).loadAll(dir.toString(), MergeOptions.fromEnv(env));
     return McpServerRunner.startForTests(config, Set.of());
+  }
+
+  private static McpServerRunner.ServerHandle startFromGlob(String glob, Map<String, String> env) {
+    ToolsConfig config = new YamlConfigLoader(env).loadAll(glob, MergeOptions.fromEnv(env));
+    return McpServerRunner.startForTests(config, Set.of());
+  }
+
+  private static void await(java.util.function.BooleanSupplier condition, long timeoutMs)
+      throws InterruptedException {
+    long deadline = System.currentTimeMillis() + timeoutMs;
+    while (System.currentTimeMillis() < deadline) {
+      if (condition.getAsBoolean()) {
+        return;
+      }
+      Thread.sleep(25);
+    }
+    assertFalse(true, "Condition not met within " + timeoutMs + "ms");
   }
 
   private static Set<String> toolNames(McpServerRunner.ServerHandle handle) {

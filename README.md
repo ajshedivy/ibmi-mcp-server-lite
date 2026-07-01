@@ -130,7 +130,7 @@ java -jar target/ibmi-mcp-server-lite-0.1.0.jar --tools tools/sample-tools.yaml
 Edit `tools/sample-tools.yaml` in your editor and save. On stderr you should see:
 
 ```
-YAML file changed: .../tools/sample-tools.yaml
+YAML file(s) changed: .../tools/sample-tools.yaml
 Reloaded tool 'my_new_tool' ...
 YAML reload applied: 0 removed, 1 added
 ```
