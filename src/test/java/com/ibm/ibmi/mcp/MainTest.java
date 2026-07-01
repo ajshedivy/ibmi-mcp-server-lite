@@ -1,11 +1,13 @@
 package com.ibm.ibmi.mcp;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Map;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -108,5 +110,36 @@ class MainTest {
     String output = outputStreamCaptor.toString();
     assertTrue(output.contains("performance"), "Console output should list merged toolset");
     assertTrue(output.contains("active_jobs"), "Console output should list merged tool");
+  }
+
+  @Test
+  void resolveYamlAutoReload_defaultsToEnabledWhenUnset() {
+    assertTrue(Main.resolveYamlAutoReload(Map.of(), false));
+  }
+
+  @Test
+  void resolveYamlAutoReload_readsTruthyValuesFromMergedEnv() {
+    assertTrue(Main.resolveYamlAutoReload(Map.of("YAML_AUTO_RELOAD", "true"), false));
+    assertTrue(Main.resolveYamlAutoReload(Map.of("YAML_AUTO_RELOAD", "TRUE"), false));
+    assertTrue(Main.resolveYamlAutoReload(Map.of("YAML_AUTO_RELOAD", "1"), false));
+  }
+
+  @Test
+  void resolveYamlAutoReload_disablesForOtherExplicitValues() {
+    assertFalse(Main.resolveYamlAutoReload(Map.of("YAML_AUTO_RELOAD", "false"), false));
+    assertFalse(Main.resolveYamlAutoReload(Map.of("YAML_AUTO_RELOAD", "0"), false));
+  }
+
+  @Test
+  void resolveYamlAutoReload_cliNoReloadOverridesEnv() {
+    assertFalse(Main.resolveYamlAutoReload(Map.of("YAML_AUTO_RELOAD", "true"), true));
+  }
+
+  @Test
+  void resolveYamlAutoReload_readsFromDotEnvFile(@TempDir Path tempDir) throws Exception {
+    Path envFile = tempDir.resolve(".env");
+    Files.writeString(envFile, "YAML_AUTO_RELOAD=false\n");
+    Map<String, String> env = com.ibm.ibmi.mcp.util.DotEnv.environment(envFile);
+    assertFalse(Main.resolveYamlAutoReload(env, false));
   }
 }

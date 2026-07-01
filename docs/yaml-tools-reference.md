@@ -192,6 +192,25 @@ semantics; `{yaml,yml}` brace alternation is expanded before matching (as in the
 server). Because Java treats `**` as one-or-more directories, patterns containing `/**/` also
 try a flattened variant (`/**/*.yaml` also matches `/*.yaml` at the walk root).
 
+## Hot-reload
+
+When `YAML_AUTO_RELOAD` is enabled (default), the server watches every YAML file resolved
+from `--tools` (single file, directory, or glob) and re-parses the full merged config on
+change. The live MCP registry is updated via `removeTool` / `addTool` and clients receive
+`notifications/tools/list_changed`. Reload uses the same `loadAll` path and
+`YAML_MERGE_*` flags as startup.
+
+| Setting | Default | Disable with |
+|---|---|---|
+| `YAML_AUTO_RELOAD` in `.env` / process env | on (`true` / `1`, or unset) | `YAML_AUTO_RELOAD=false` or `--no-reload` |
+
+On a failed reload (parse error, validation failure, unknown source), the server logs
+the error to stderr and **keeps the previous tool set**. Security validation
+(`readOnly` defaults, etc.) is re-applied on every reload, same as at startup.
+
+**Not reloaded:** `sources` connections are established at startup — a tool that references
+a newly added source will fail reload until the process is restarted.
+
 ## Differences from the reference server (by design, for now)
 
 - Simplified read-only validation (regex strategy only; the reference's primary path is

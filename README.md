@@ -110,6 +110,48 @@ Key semantics (full details in [docs/yaml-tools-reference.md](docs/yaml-tools-re
 - Tools are **read-only by default**: only SELECT/WITH statements pass validation unless
   a tool sets `security.readOnly: false`.
 - `--toolsets a,b` (or `SELECTED_TOOLSETS`) registers only the tools in those toolsets.
+- **Hot-reload** (default on): when any resolved tools YAML file changes on disk, the server
+  re-merges and updates the live tool registry without restarting. See
+  [Hot-reloading tools YAML](#hot-reloading-tools-yaml) below.
+
+## Hot-reloading tools YAML
+
+When `YAML_AUTO_RELOAD` is enabled (the default), the server watches every YAML file
+resolved from `--tools` (file, directory, or glob) and live-updates the MCP tool registry
+on save — `addTool` / `removeTool` followed by `notifications/tools/list_changed` so
+connected clients re-fetch `tools/list`. Reload re-runs the same merge path as startup
+(`YAML_MERGE_*` flags apply).
+
+```bash
+# Start the server and leave it running (logs go to stderr)
+java -jar target/ibmi-mcp-server-lite-0.1.0.jar --tools tools/sample-tools.yaml
+```
+
+Edit `tools/sample-tools.yaml` in your editor and save. On stderr you should see:
+
+```
+YAML file(s) changed: .../tools/sample-tools.yaml
+Reloaded tool 'my_new_tool' ...
+YAML reload applied: 0 removed, 1 added
+```
+
+**Validate YAML before relying on reload** — a bad save is logged and the previous tool
+set is kept:
+
+```bash
+java -jar target/ibmi-mcp-server-lite-0.1.0.jar --tools tools/sample-tools.yaml --list-tools
+```
+
+**Disable hot-reload** with `--no-reload` or `YAML_AUTO_RELOAD=false` in `.env`.
+
+**Limits (by design):** DB **sources** are loaded at startup only — adding a new source in
+YAML on reload will fail validation until the server is restarted. Tools must be defined
+under the top-level `tools:` key (not nested inside another tool).
+
+**Manual testing note:** `scripts/smoke-test.py` and `sandbox/mcp-cli` spawn a **new**
+server per invocation, so they exercise startup loading but not hot-reload. To test
+reload, keep one server process running (as above) or use an MCP client (Cursor, Claude
+Desktop) that holds the stdio session open.
 
 ## CLI and environment reference
 
@@ -118,6 +160,8 @@ Key semantics (full details in [docs/yaml-tools-reference.md](docs/yaml-tools-re
 | `-t, --tools <path>` | `TOOLS_YAML_PATH` | Tools YAML file, directory, or glob (required) |
 | `-ts, --toolsets <a,b>` | `SELECTED_TOOLSETS` | Only register tools in these toolsets |
 | `--list-toolsets` | — | Print toolsets and exit |
+| `--list-tools` | — | Print all enabled tools and exit |
+| `--no-reload` | `YAML_AUTO_RELOAD` | Disable hot-reload of tools YAML (env default: on) |
 | `--env-file <path>` | — | `.env` file for `${VAR}` interpolation (default `./.env`) |
 | `--version` / `--help` | — | Print and exit |
 | — | `MCP_LOG_LEVEL` | `debug`, `info` (default), `warn`, `error` — logs go to **stderr** |
@@ -125,6 +169,9 @@ Key semantics (full details in [docs/yaml-tools-reference.md](docs/yaml-tools-re
 | — | `YAML_ALLOW_DUPLICATE_TOOLS` | `false` (default) — error on duplicate tool names across merged files |
 | — | `YAML_ALLOW_DUPLICATE_SOURCES` | `false` (default) — error on duplicate source names across merged files |
 | — | `YAML_VALIDATE_MERGED` | `true` (default) — post-merge tool→source and toolset→tool checks |
+
+`YAML_AUTO_RELOAD` is read from the merged environment (`.env` file plus process env;
+process env wins). Enabled when unset, or when the value is `true` or `1`.
 
 ## Project layout
 
@@ -134,7 +181,7 @@ Key semantics (full details in [docs/yaml-tools-reference.md](docs/yaml-tools-re
 | `com.ibm.ibmi.mcp.schema` | Parameter definitions → MCP `inputSchema` (JSON Schema) |
 | `com.ibm.ibmi.mcp.sql` | `:name` → parameterized-query binding; basic SQL security validation |
 | `com.ibm.ibmi.mcp.mapepire` | One lazy Mapepire `Pool` per source (`SourceManager`) |
-| `com.ibm.ibmi.mcp.server` | MCP server construction, tool registration, call handling |
+| `com.ibm.ibmi.mcp.server` | MCP server construction, tool registration, hot-reload watcher, call handling |
 | `packaging/`, `Makefile` | IBM i RPM skeleton (spec, PASE launcher, Service Commander unit) |
 
 Tool results mirror the reference server's `StandardSqlToolOutput` shape, returned as a
@@ -166,9 +213,9 @@ runtime gap on IBM i** — the one open blocker for running the server on the sy
 
 ## What's deliberately missing
 
-This MVP implements a faithful subset of the reference server. HTTP transport, hot
-reload, the full SQL security parser, structured per-call logging, and more
-are sequenced into milestones — each tracked as a GitHub issue with pointers into the
-reference implementation — in the [**roadmap**](ROADMAP.md)
+This MVP implements a faithful subset of the reference server. HTTP transport,
+the full SQL security parser, structured per-call logging, and more are sequenced into
+milestones — each tracked as a GitHub issue with pointers into the reference
+implementation — in the [**roadmap**](ROADMAP.md)
 ([milestones](https://github.com/ajshedivy/ibmi-mcp-server-lite/milestones) ·
 [good first issues](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues?q=is%3Aopen+label%3A%22good+first+issue%22)).

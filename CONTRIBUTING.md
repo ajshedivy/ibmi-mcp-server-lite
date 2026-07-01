@@ -68,8 +68,12 @@ is tracked.
 # Inspect config without connecting to IBM i
 java -jar target/ibmi-mcp-server-lite-0.1.0.jar --tools tools/sample-tools.yaml --list-toolsets
 
-# Run the server (stdio JSON-RPC transport — it waits for an MCP client on stdin)
+# Run the server (stdio JSON-RPC transport — it waits for an MCP client on stdin).
+# Hot-reload is on by default: edit the YAML and save to update tools live.
 java -jar target/ibmi-mcp-server-lite-0.1.0.jar --tools tools/sample-tools.yaml
+
+# Disable hot-reload
+java -jar target/ibmi-mcp-server-lite-0.1.0.jar --tools tools/sample-tools.yaml --no-reload
 
 # Full-protocol smoke test against a live IBM i (initialize -> tools/list -> tools/call).
 # Needs a configured .env and the built jar, so package first.
@@ -112,7 +116,7 @@ One pipeline, one package per stage under `src/main/java/com/ibm/ibmi/mcp/`:
 | `schema` | Parameter definitions -> MCP `inputSchema` (JSON Schema) |
 | `sql` | `:name` -> parameterized-query binding; basic SQL security validation |
 | `mapepire` | One lazy Mapepire `Pool` per source (`SourceManager`) |
-| `server` | MCP server construction, tool registration, call handling |
+| `server` | MCP server construction, tool registration, hot-reload watcher, call handling |
 
 Supporting material: [`ROADMAP.md`](ROADMAP.md) (milestones + linked issues), `tools/`
 (sample YAML), `scripts/` (smoke test), `docs/` (YAML reference, IBM i deployment, and
@@ -130,6 +134,16 @@ YAML file (`sources`, `tools`, `toolsets`); the full schema is in
 [docs/yaml-tools-reference.md](docs/yaml-tools-reference.md). Keep statements read-only
 (SELECT/WITH) unless you explicitly need otherwise, and use `:name` placeholders for any
 user input — they become parameterized-query binds and are never spliced into the SQL.
+
+### Hot-reload while developing
+
+With the server running (`java -jar ... --tools tools/sample-tools.yaml`), saving the
+YAML file updates the live registry when `YAML_AUTO_RELOAD` is on (default). Watch stderr
+for `YAML file(s) changed` and `YAML reload applied`. A bad save logs an error and leaves
+the previous tools intact.
+
+`sandbox/mcp-cli` spawns a fresh server per command, so use it for `tools/call` smoke
+tests — not for exercising reload. See [README — Hot-reloading tools YAML](README.md#hot-reloading-tools-yaml).
 
 ## Conventions
 

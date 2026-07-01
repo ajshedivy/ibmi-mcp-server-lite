@@ -43,6 +43,10 @@ public final class SourceManager implements AutoCloseable {
     inFlightQueries.decrementAndGet();
   }
 
+  public boolean hasSource(String sourceName) {
+    return sources.containsKey(sourceName);
+  }
+
   /** Returns an initialized pool for the named source, connecting on first use. */
   public synchronized Pool getPool(String sourceName) throws Exception {
     Pool existing = pools.get(sourceName);

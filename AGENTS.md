@@ -32,6 +32,7 @@ python3 scripts/smoke-test.py
 # Run the server / inspect config
 java -jar target/ibmi-mcp-server-lite-0.1.0.jar --tools tools/sample-tools.yaml
 java -jar target/ibmi-mcp-server-lite-0.1.0.jar --tools tools/sample-tools.yaml --list-toolsets
+java -jar target/ibmi-mcp-server-lite-0.1.0.jar --tools tools/sample-tools.yaml --no-reload  # disable hot-reload
 ```
 
 There is no lint step. Tests are JUnit 5 via surefire.
@@ -44,7 +45,8 @@ One pipeline, one package per stage (`src/main/java/com/ibm/ibmi/mcp/`):
 YAML file ──(config: env-interpolate raw text, SnakeYAML SafeConstructor → records)
          ──(schema: ParameterConfig list → JSON Schema string for MCP inputSchema)
          ──(server: McpServerRunner registers one MCP tool per enabled SqlToolConfig,
-                    SqlToolHandler handles tools/call)
+                    SqlToolHandler handles tools/call;
+                    ToolsYamlWatcher hot-reloads on YAML change when YAML_AUTO_RELOAD is on)
          ──(sql: ParameterProcessor binds :name → ? placeholders;
                  SqlSecurityValidator enforces read-only)
          ──(mapepire: SourceManager holds one lazy Mapepire Pool per source)

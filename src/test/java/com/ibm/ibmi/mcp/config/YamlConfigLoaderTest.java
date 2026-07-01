@@ -5,6 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 
@@ -355,6 +357,48 @@ class YamlConfigLoaderTest {
     Map<String, Object> opts = envLoader.parse(yaml).sources().get("a").jdbcOptions();
     assertEquals(List.of("MYLIB", "DEVDATA"), opts.get("libraries"));
     assertEquals("system", opts.get("naming"));
+  }
+
+  @Test
+  void loadReparseReflectsChangedFileText(@TempDir Path tempDir) throws Exception {
+    Path yaml = tempDir.resolve("tools.yaml");
+    Files.writeString(yaml, minimalToolsYaml("tool_a", "First description"));
+    ToolsConfig first = loader.load(yaml);
+
+    assertEquals("First description", first.tools().get("tool_a").description());
+    assertEquals(1, first.tools().size());
+
+    Files.writeString(yaml, minimalToolsYaml("tool_a", "Updated description", "tool_b", "New tool"));
+    ToolsConfig second = loader.load(yaml);
+
+    assertEquals("Updated description", second.tools().get("tool_a").description());
+    assertEquals("New tool", second.tools().get("tool_b").description());
+    assertEquals(2, second.tools().size());
+  }
+
+  private static String minimalToolsYaml(String... nameDescriptionPairs) {
+    if (nameDescriptionPairs.length % 2 != 0) {
+      throw new IllegalArgumentException("Expected name/description pairs");
+    }
+    StringBuilder tools = new StringBuilder();
+    for (int i = 0; i < nameDescriptionPairs.length; i += 2) {
+      String name = nameDescriptionPairs[i];
+      String description = nameDescriptionPairs[i + 1];
+      tools.append("""
+            %s:
+              source: a
+              description: "%s"
+              statement: SELECT 1 FROM SYSIBM.SYSDUMMY1
+          """.formatted(name, description));
+    }
+    return """
+        sources:
+          a:
+            host: h
+            user: u
+            password: p
+        tools:
+        """ + tools;
   }
 
   @Test

@@ -1,5 +1,6 @@
 package com.ibm.ibmi.mcp;
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Path;
 import java.util.Arrays;
@@ -31,7 +32,8 @@ import com.ibm.ibmi.mcp.util.ShutdownGuard;
  *
  * The MCP protocol runs over stdio (stdout is reserved for protocol frames; all logging
  * goes to stderr). Configuration can also come from the environment:
- * {@code TOOLS_YAML_PATH}, {@code SELECTED_TOOLSETS}, {@code MCP_LOG_LEVEL}.
+ * {@code TOOLS_YAML_PATH}, {@code SELECTED_TOOLSETS}, {@code YAML_AUTO_RELOAD},
+ * {@code MCP_LOG_LEVEL}.
  */
 public final class Main {
 
@@ -44,6 +46,7 @@ public final class Main {
              --list-toolsets      Print toolsets defined in the YAML file and exit
              --list-tools         Print all enabled tools defined in the YAML file and exit
              --env-file <path>    .env file for ${VAR} interpolation (default: ./.env)
+             --no-reload          Disable hot-reload of tools YAML (env: YAML_AUTO_RELOAD)
              --version            Print version and exit
         -h,  --help               Show this help
       """;
@@ -60,6 +63,7 @@ public final class Main {
     String envFile = ".env";
     boolean listToolsets = false;
     boolean listTools = false;
+    boolean noReload = false;
 
     for (int i = 0; i < args.length; i++) {
       switch (args[i]) {
@@ -68,6 +72,7 @@ public final class Main {
         case "--env-file" -> envFile = requireValue(args, ++i, "--env-file");
         case "--list-toolsets" -> listToolsets = true;
         case "--list-tools" -> listTools = true;
+        case "--no-reload" -> noReload = true;
         case "--version" -> {
           System.out.println(McpServerRunner.SERVER_NAME + " " + McpServerRunner.SERVER_VERSION);
           return;
@@ -110,20 +115,31 @@ public final class Main {
           .filter(s -> !s.isEmpty()).forEach(selected::add);
     }
 
+    boolean yamlAutoReload = resolveYamlAutoReload(env, noReload);
     CountDownLatch shutdownLatch = new CountDownLatch(1);
     AtomicBoolean shuttingDown = new AtomicBoolean(false);
-    McpServerRunner.ServerHandle[] handle = new McpServerRunner.ServerHandle[1];
+    McpServerRunner.ServerHandle[] handleSlot = new McpServerRunner.ServerHandle[1];
 
     Runnable shutdown = ShutdownGuard.once(shuttingDown, shutdownLatch, () -> {
-      if (handle[0] != null) {
-        handle[0].close();
+      if (handleSlot[0] != null) {
+        handleSlot[0].close();
       }
     });
 
     InputStream stdin = new EofNotifyingInputStream(
         System.in, () -> new Thread(shutdown, "stdin-eof").start());
     Runtime.getRuntime().addShutdownHook(new Thread(shutdown, "shutdown-cleanup"));
-    handle[0] = McpServerRunner.start(config, selected, stdin, handle);
+
+    handleSlot[0] = McpServerRunner.start(config, selected, stdin, handleSlot);
+
+    if (yamlAutoReload) {
+      try {
+        McpServerRunner.attachYamlWatcher(handleSlot[0], toolsPath, env, mergeOpts, selected);
+      } catch (IOException e) {
+        System.err.println("warning: could not start YAML watcher: " + e.getMessage());
+      }
+    }
+
     shutdownLatch.await();
   }
 
@@ -178,6 +194,25 @@ public final class Main {
       fail("Missing value for " + option);
     }
     return args[index];
+  }
+
+  /**
+   * Whether to watch the tools YAML and hot-reload on change.
+   *
+   * <p>Resolution order: {@code --no-reload} disables reload; otherwise read
+   * {@code YAML_AUTO_RELOAD} from the merged environment ({@link DotEnv#environment}
+   * — process env wins over the {@code .env} file). Enabled when unset (reference
+   * default), or when the value is {@code true} or {@code 1}.
+   */
+  static boolean resolveYamlAutoReload(Map<String, String> env, boolean noReloadCli) {
+    if (noReloadCli) {
+      return false;
+    }
+    String value = env.get("YAML_AUTO_RELOAD");
+    if (value == null || value.isBlank()) {
+      return true;
+    }
+    return "true".equalsIgnoreCase(value) || "1".equals(value);
   }
 
   private static void fail(String message) {
