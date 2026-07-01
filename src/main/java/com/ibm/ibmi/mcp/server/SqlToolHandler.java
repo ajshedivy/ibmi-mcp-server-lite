@@ -59,6 +59,7 @@ public final class SqlToolHandler
 
   @Override
   public CallToolResult apply(McpSyncServerExchange exchange, CallToolRequest request) {
+    RequestContext context = RequestContext.create(tool.name());
     try {
       BoundStatement bound = ParameterProcessor.prepare(tool, request.arguments());
       if (tool.security() != SecurityConfig.DEFAULTS) {
@@ -67,25 +68,25 @@ public final class SqlToolHandler
         SqlSecurityValidator.validate(bound.sql(), tool.security());
       }
 
-      log.info("Executing tool '{}' ({} bound parameters)", tool.name(), bound.parameters().size());
-      long start = System.currentTimeMillis();
+      log.info("[{}] Executing tool '{}' ({} bound parameters)", context.requestId(), tool.name(), bound.parameters().size());
 
-      PaginatedResult paginated = executeQuery(bound);
+      PaginatedResult paginated = executeQuery(context, bound);
 
-      long elapsed = System.currentTimeMillis() - start;
+      long elapsed = System.currentTimeMillis() - context.startMillis();
       Map<String, Object> output = buildOutput(
-          paginated, elapsed, bound.parameters().size(), bound.sql(), request.arguments());
+          paginated, elapsed, bound.parameters().size(), bound.sql(), request.arguments(), context);
       return CallToolResult.builder()
           .addTextContent(formatTextContent(output))
           .structuredContent(output)
           .isError(false)
           .build();
+          
     } catch (Exception e) {
       Throwable cause = e.getCause() != null ? e.getCause() : e;
       if (MapepireFailures.isConnectionLevel(e)) {
         sources.evictPool(tool.source());
       }
-      log.error("Tool '{}' failed: {}", tool.name(), cause.getMessage());
+      log.error("[{}] Tool '{}' failed: {}", context.requestId(), tool.name(), cause.getMessage());
       Map<String, Object> output = new LinkedHashMap<>();
       output.put("success", false);
       output.put("data", List.of());
@@ -103,7 +104,7 @@ public final class SqlToolHandler
    *
    * @return a {@link PaginatedResult} containing rows, metadata, and truncation status
    */
-  private PaginatedResult executeQuery(BoundStatement bound) throws Exception {
+  private PaginatedResult executeQuery(RequestContext context, BoundStatement bound) throws Exception {
     sources.beginQuery();
     try {
       Pool pool = sources.getPool(tool.source());
@@ -125,7 +126,7 @@ public final class SqlToolHandler
           if (MapepireFailures.isConnectionLevel(e)) {
             sources.evictPool(tool.source());
           }
-          log.warn("Failed to close query for tool '{}': {}", tool.name(), e.getMessage());
+          log.warn("[{}] Failed to close query for tool '{}': {}", context.requestId(), tool.name(), e.getMessage());
         }
       }
     } finally {
@@ -202,7 +203,8 @@ public final class SqlToolHandler
       long elapsedMs,
       int paramCount,
       String sqlStatement,
-      Map<String, Object> parameters) {
+      Map<String, Object> parameters,
+      RequestContext context) {
     QueryResult<Object> result = paginated.result();
     // Use accumulated rows if present (pagination case), otherwise use result data
     List<Object> rows = paginated.accumulatedRows() != null
@@ -234,8 +236,8 @@ public final class SqlToolHandler
     }
     if (paginated.truncated()) {
       metadata.put("truncated", true);
-      log.warn("Tool '{}' result truncated at {} rows (query returned more data than MAX_PAGINATION_ROWS)",
-          tool.name(), SqlToolConfig.MAX_PAGINATION_ROWS);
+      log.warn("[{}] Tool '{}' result truncated at {} rows (query returned more data than MAX_PAGINATION_ROWS)",
+          context.requestId(), tool.name(), SqlToolConfig.MAX_PAGINATION_ROWS);
     } else {
       metadata.put("truncated", false);
     }
@@ -244,6 +246,7 @@ public final class SqlToolHandler
     output.put("success", true);
     output.put("data", rows);
     output.put("metadata", metadata);
+    log.info("[{}] Tool '{}' completed: {} rows in {} ms", context.requestId(), tool.name(), rows.size(), elapsedMs);
     return output;
   }
 }
