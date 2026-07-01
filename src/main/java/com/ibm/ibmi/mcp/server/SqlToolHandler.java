@@ -59,6 +59,7 @@ public final class SqlToolHandler
 
   @Override
   public CallToolResult apply(McpSyncServerExchange exchange, CallToolRequest request) {
+    // Outside try: catch only runs after create() succeeds, so RequestContext is always available.
     RequestContext context = RequestContext.create(tool.name());
     try {
       BoundStatement bound = ParameterProcessor.prepare(tool, request.arguments());
