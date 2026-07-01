@@ -2,6 +2,7 @@ package com.ibm.ibmi.mcp.server;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -129,11 +130,55 @@ public final class McpServerRunner {
 
   private McpServerRunner() {}
 
+  /**
+   * Starts the server with the default stdio transport (process stdin/stdout).
+   * Used by {@link com.ibm.ibmi.mcp.Main}.
+   */
   public static ServerHandle start(
       ToolsConfig config,
       Set<String> selectedToolsets,
       InputStream stdin,
       ServerHandle[] handleSlot) {
+    return start(config, selectedToolsets, stdin, handleSlot, System.out);
+  }
+
+  /**
+   * In-process stdio transport for unit tests (does not bind {@code System.in/out}).
+   */
+  static ServerHandle startForTests(ToolsConfig config, Set<String> selectedToolsets) {
+    ToolSpecContext toolSpecContext = ToolSpecContext.create();
+    SourceManager sources = new SourceManager(config.sources());
+    ConcurrentHashMap<String, SqlToolConfig> registeredTools = new ConcurrentHashMap<>();
+    ServerHandle handle = new ServerHandle(sources, toolSpecContext, registeredTools);
+
+    Map<String, SqlToolConfig> selected = config.selectTools(selectedToolsets);
+    if (selected.isEmpty()) {
+      log.warn("No tools selected for registration (check --toolsets / YAML contents)");
+    }
+
+    validateSelectedTools(selected.values());
+
+    McpSyncServer server = McpServer.sync(
+            new StdioServerTransportProvider(toolSpecContext.jsonMapper()))
+        .serverInfo(SERVER_NAME, SERVER_VERSION)
+        .capabilities(ServerCapabilities.builder().tools(true).logging().build())
+        .build();
+    handle.attachServer(server);
+
+    for (SqlToolConfig toolConfig : selected.values()) {
+      server.addTool(buildSpec(toolConfig, sources, toolSpecContext));
+      registeredTools.put(toolConfig.name(), toolConfig);
+    }
+
+    return handle;
+  }
+
+  public static ServerHandle start(
+      ToolsConfig config,
+      Set<String> selectedToolsets,
+      InputStream stdin,
+      ServerHandle[] handleSlot,
+      OutputStream stdout) {
     ToolSpecContext toolSpecContext = ToolSpecContext.create();
     SourceManager sources = new SourceManager(config.sources());
     ConcurrentHashMap<String, SqlToolConfig> registeredTools = new ConcurrentHashMap<>();
@@ -149,7 +194,7 @@ public final class McpServerRunner {
 
     // stdin EOF is detected by EofNotifyingInputStream in Main; transport remains the sole reader.
     McpSyncServer server = McpServer.sync(
-            new StdioServerTransportProvider(toolSpecContext.jsonMapper(), stdin, System.out))
+            new StdioServerTransportProvider(toolSpecContext.jsonMapper(), stdin, stdout))
         .serverInfo(SERVER_NAME, SERVER_VERSION)
         .capabilities(ServerCapabilities.builder().tools(true).logging().build())
         .build();

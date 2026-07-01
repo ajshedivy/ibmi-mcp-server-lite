@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -51,10 +52,10 @@ class ToolsYamlWatcherTest {
   }
 
   @Test
-  void start_throwsWhenParentDirectoryMissing() {
-    assertThrows(
-        IllegalArgumentException.class,
-        () -> ToolsYamlWatcher.start(List.of(Path.of("orphan.yaml")), 50, () -> {}));
+  void start_closesWatchServiceWhenParentDirectoryMissing(@TempDir Path tempDir) {
+    Path missingParent = tempDir.resolve("gone").resolve("tools.yaml");
+    assertThrows(IOException.class,
+        () -> ToolsYamlWatcher.start(List.of(missingParent), 50, () -> {}));
   }
 
   @Test
@@ -120,9 +121,7 @@ class ToolsYamlWatcherTest {
 
   private static McpServerRunner.ServerHandle startFromYaml(Path yaml, Map<String, String> env) {
     ToolsConfig config = new YamlConfigLoader(env).load(yaml);
-    McpServerRunner.ServerHandle[] slot = new McpServerRunner.ServerHandle[1];
-    McpServerRunner.start(config, Set.of(), new ByteArrayInputStream(new byte[0]), slot);
-    return slot[0];
+    return McpServerRunner.startForTests(config, Set.of());
   }
 
   private static void await(java.util.function.BooleanSupplier condition, long timeoutMs)

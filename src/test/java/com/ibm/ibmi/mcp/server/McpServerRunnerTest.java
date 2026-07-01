@@ -185,7 +185,7 @@ class McpServerRunnerTest {
     Path toolsA = tempDir.resolve("a.yaml");
     Path toolsB = tempDir.resolve("b.yaml");
     Files.writeString(toolsA, yamlWithTools("tool_a"));
-    Files.writeString(toolsB, yamlWithTools("tool_b"));
+    Files.writeString(toolsB, yamlWithToolsOnly("tool_b"));
     Map<String, String> env = Map.of();
     MergeOptions mergeOpts = MergeOptions.fromEnv(env);
 
@@ -312,16 +312,12 @@ class McpServerRunnerTest {
 
   private static McpServerRunner.ServerHandle startFromYaml(Path yaml, Map<String, String> env) {
     ToolsConfig config = new YamlConfigLoader(env).load(yaml);
-    McpServerRunner.ServerHandle[] slot = new McpServerRunner.ServerHandle[1];
-    McpServerRunner.start(config, Set.of(), new ByteArrayInputStream(new byte[0]), slot);
-    return slot[0];
+    return McpServerRunner.startForTests(config, Set.of());
   }
 
   private static McpServerRunner.ServerHandle startFromDirectory(Path dir, Map<String, String> env) {
     ToolsConfig config = new YamlConfigLoader(env).loadAll(dir.toString(), MergeOptions.fromEnv(env));
-    McpServerRunner.ServerHandle[] slot = new McpServerRunner.ServerHandle[1];
-    McpServerRunner.start(config, Set.of(), new ByteArrayInputStream(new byte[0]), slot);
-    return slot[0];
+    return McpServerRunner.startForTests(config, Set.of());
   }
 
   private static Set<String> toolNames(McpServerRunner.ServerHandle handle) {
@@ -348,6 +344,19 @@ class McpServerRunnerTest {
             password: pass
         tools:
         """ + tools;
+  }
+
+  private static String yamlWithToolsOnly(String... toolNames) {
+    StringBuilder tools = new StringBuilder();
+    for (String name : toolNames) {
+      tools.append("""
+            %s:
+              source: ibmi-system
+              description: "%s"
+              statement: SELECT 1 FROM SYSIBM.SYSDUMMY1
+          """.formatted(name, name));
+    }
+    return "tools:\n" + tools;
   }
 
   private static SqlToolConfig tool(

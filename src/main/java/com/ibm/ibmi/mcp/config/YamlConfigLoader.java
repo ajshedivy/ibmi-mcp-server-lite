@@ -118,7 +118,7 @@ public final class YamlConfigLoader {
     return config;
   }
 
-  static List<Path> resolveToolPaths(String toolsPath) {
+  public static List<Path> resolveToolPaths(String toolsPath) {
     Path path = Path.of(toolsPath);
     List<Path> resolved;
     if (Files.isRegularFile(path)) {
