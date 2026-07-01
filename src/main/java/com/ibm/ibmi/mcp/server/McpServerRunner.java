@@ -1,5 +1,6 @@
 package com.ibm.ibmi.mcp.server;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -59,6 +60,7 @@ public final class McpServerRunner {
     private final ConcurrentHashMap<String, SqlToolConfig> registeredTools;
     private volatile McpSyncServer server;
     private volatile ToolsYamlWatcher yamlWatcher;
+    private volatile TestStdin testStdin;
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
     ServerHandle(
@@ -76,6 +78,10 @@ public final class McpServerRunner {
 
     void attachYamlWatcher(ToolsYamlWatcher watcher) {
       this.yamlWatcher = watcher;
+    }
+
+    void attachTestStdin(TestStdin testStdin) {
+      this.testStdin = testStdin;
     }
 
     public McpSyncServer server() {
@@ -103,6 +109,10 @@ public final class McpServerRunner {
         yamlWatcher.close();
       }
       sources.close();
+      TestStdin testStdin = this.testStdin;
+      if (testStdin != null) {
+        testStdin.close();
+      }
       McpSyncServer active = server;
       if (active != null) {
         active.close();
@@ -158,8 +168,10 @@ public final class McpServerRunner {
 
     validateSelectedTools(selected.values());
 
-    McpSyncServer server = McpServer.sync(
-            new StdioServerTransportProvider(toolSpecContext.jsonMapper()))
+    TestStdin testStdin = new TestStdin();
+    handle.attachTestStdin(testStdin);
+    McpSyncServer server = McpServer.sync(new StdioServerTransportProvider(
+            toolSpecContext.jsonMapper(), testStdin, new ByteArrayOutputStream()))
         .serverInfo(SERVER_NAME, SERVER_VERSION)
         .capabilities(ServerCapabilities.builder().tools(true).logging().build())
         .build();
@@ -413,5 +425,35 @@ public final class McpServerRunner {
       title.append(Character.toUpperCase(word.charAt(0))).append(word.substring(1));
     }
     return title.toString();
+  }
+
+  /**
+   * Test-only stdin that blocks reads until closed, avoiding {@code System.in} while keeping
+   * the MCP stdio transport alive until {@link ServerHandle#close()}.
+   */
+  private static final class TestStdin extends InputStream {
+
+    private volatile boolean open = true;
+
+    @Override
+    public synchronized int read() throws IOException {
+      while (open) {
+        try {
+          wait();
+        } catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
+          throw new IOException("Interrupted while waiting for test stdin", e);
+        }
+      }
+      return -1;
+    }
+
+    @Override
+    public void close() {
+      open = false;
+      synchronized (this) {
+        notifyAll();
+      }
+    }
   }
 }
