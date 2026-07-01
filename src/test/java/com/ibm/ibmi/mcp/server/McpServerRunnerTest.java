@@ -66,7 +66,9 @@ class McpServerRunnerTest {
     McpServerRunner.ServerHandle testHandle = new McpServerRunner.ServerHandle(
         new SourceManager(Map.of()),
         McpServerRunner.ToolSpecContext.create(),
-        new ConcurrentHashMap<>());
+        new ConcurrentHashMap<>(),
+        false,
+        true);
     testHandle.attachServer(server);
     assertDoesNotThrow(() -> {
       testHandle.close();

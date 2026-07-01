@@ -35,7 +35,7 @@ import io.modelcontextprotocol.spec.McpSchema.Tool;
 import io.modelcontextprotocol.spec.McpSchema.ToolAnnotations;
 
 /**
- * Builds the MCP server over stdio and registers every selected YAML tool.
+ * Builds the MCP server over stdio and registers selected YAML tools plus optional built-ins.
  *
  * <p>TODO: Streamable HTTP transport
  * ({@code HttpServletStreamableServerTransportProvider} in mcp-core) behind a
@@ -57,6 +57,8 @@ public final class McpServerRunner {
     private final SourceManager sources;
     private final ToolSpecContext toolSpecContext;
     private final ConcurrentHashMap<String, SqlToolConfig> registeredTools;
+    private final boolean enableExecuteSql;
+    private final boolean executeSqlReadonly;
     private volatile McpSyncServer server;
     private volatile ToolsYamlWatcher yamlWatcher;
     private final AtomicBoolean closed = new AtomicBoolean(false);
@@ -64,10 +66,14 @@ public final class McpServerRunner {
     ServerHandle(
         SourceManager sources,
         ToolSpecContext toolSpecContext,
-        ConcurrentHashMap<String, SqlToolConfig> registeredTools) {
+        ConcurrentHashMap<String, SqlToolConfig> registeredTools,
+        boolean enableExecuteSql,
+        boolean executeSqlReadonly) {
       this.sources = sources;
       this.toolSpecContext = toolSpecContext;
       this.registeredTools = registeredTools;
+      this.enableExecuteSql = enableExecuteSql;
+      this.executeSqlReadonly = executeSqlReadonly;
     }
 
     void attachServer(McpSyncServer server) {
@@ -92,6 +98,14 @@ public final class McpServerRunner {
 
     public ConcurrentHashMap<String, SqlToolConfig> registeredTools() {
       return registeredTools;
+    }
+
+    boolean enableExecuteSql() {
+      return enableExecuteSql;
+    }
+
+    boolean executeSqlReadonly() {
+      return executeSqlReadonly;
     }
 
     @Override
@@ -138,24 +152,32 @@ public final class McpServerRunner {
       ToolsConfig config,
       Set<String> selectedToolsets,
       InputStream stdin,
-      ServerHandle[] handleSlot) {
-    return start(config, selectedToolsets, stdin, handleSlot, System.out);
+      ServerHandle[] handleSlot,
+      boolean enableExecuteSql,
+      boolean executeSqlReadonly) {
+    return start(config, selectedToolsets, stdin, handleSlot, System.out,
+        enableExecuteSql, executeSqlReadonly);
   }
 
   /**
    * In-process stdio transport for unit tests (does not bind {@code System.in/out}).
    */
   static ServerHandle startForTests(ToolsConfig config, Set<String> selectedToolsets) {
+    return startForTests(config, selectedToolsets, false, true);
+  }
+
+  static ServerHandle startForTests(
+      ToolsConfig config,
+      Set<String> selectedToolsets,
+      boolean enableExecuteSql,
+      boolean executeSqlReadonly) {
     ToolSpecContext toolSpecContext = ToolSpecContext.create();
     SourceManager sources = new SourceManager(config.sources());
     ConcurrentHashMap<String, SqlToolConfig> registeredTools = new ConcurrentHashMap<>();
-    ServerHandle handle = new ServerHandle(sources, toolSpecContext, registeredTools);
+    ServerHandle handle = new ServerHandle(
+        sources, toolSpecContext, registeredTools, enableExecuteSql, executeSqlReadonly);
 
     Map<String, SqlToolConfig> selected = config.selectTools(selectedToolsets);
-    if (selected.isEmpty()) {
-      log.warn("No tools selected for registration (check --toolsets / YAML contents)");
-    }
-
     validateSelectedTools(selected.values());
 
     McpSyncServer server = McpServer.sync(
@@ -165,10 +187,8 @@ public final class McpServerRunner {
         .build();
     handle.attachServer(server);
 
-    for (SqlToolConfig toolConfig : selected.values()) {
-      server.addTool(buildSpec(toolConfig, sources, toolSpecContext));
-      registeredTools.put(toolConfig.name(), toolConfig);
-    }
+    registerYamlTools(handle, config, selected, server);
+    ensureExecuteSqlRegistered(handle, config);
 
     return handle;
   }
@@ -178,18 +198,17 @@ public final class McpServerRunner {
       Set<String> selectedToolsets,
       InputStream stdin,
       ServerHandle[] handleSlot,
-      OutputStream stdout) {
+      OutputStream stdout,
+      boolean enableExecuteSql,
+      boolean executeSqlReadonly) {
     ToolSpecContext toolSpecContext = ToolSpecContext.create();
     SourceManager sources = new SourceManager(config.sources());
     ConcurrentHashMap<String, SqlToolConfig> registeredTools = new ConcurrentHashMap<>();
-    ServerHandle handle = new ServerHandle(sources, toolSpecContext, registeredTools);
+    ServerHandle handle = new ServerHandle(
+        sources, toolSpecContext, registeredTools, enableExecuteSql, executeSqlReadonly);
     handleSlot[0] = handle;
 
     Map<String, SqlToolConfig> selected = config.selectTools(selectedToolsets);
-    if (selected.isEmpty()) {
-      log.warn("No tools selected for registration (check --toolsets / YAML contents)");
-    }
-
     validateSelectedTools(selected.values());
 
     // stdin EOF is detected by EofNotifyingInputStream in Main; transport remains the sole reader.
@@ -200,15 +219,68 @@ public final class McpServerRunner {
         .build();
     handle.attachServer(server);
 
+    registerYamlTools(handle, config, selected, server);
+    int registeredCount = ensureExecuteSqlRegistered(handle, config);
+
+    log.info("{} v{} ready on stdio with {} tools", SERVER_NAME, SERVER_VERSION, registeredCount);
+    return handle;
+  }
+
+  private static void registerYamlTools(
+      ServerHandle handle,
+      ToolsConfig config,
+      Map<String, SqlToolConfig> selected,
+      McpSyncServer server) {
+    if (selected.isEmpty()) {
+      log.warn("No tools selected for registration (check --toolsets / YAML contents)");
+    }
+
     for (SqlToolConfig toolConfig : selected.values()) {
-      server.addTool(buildSpec(toolConfig, sources, toolSpecContext));
-      registeredTools.put(toolConfig.name(), toolConfig);
+      server.addTool(buildSpec(toolConfig, handle.sources(), handle.toolSpecContext()));
+      handle.registeredTools().put(toolConfig.name(), toolConfig);
       log.info("Registered tool '{}' (source: {}, toolsets: {})",
           toolConfig.name(), toolConfig.source(), config.toolsetsForTool(toolConfig.name()));
     }
+  }
 
-    log.info("{} v{} ready on stdio with {} tools", SERVER_NAME, SERVER_VERSION, selected.size());
-    return handle;
+  /**
+   * Registers or updates the built-in {@code execute_sql} tool when enabled.
+   *
+   * @return total number of tools now registered
+   */
+  private static int ensureExecuteSqlRegistered(ServerHandle handle, ToolsConfig config) {
+    if (!handle.enableExecuteSql()) {
+      return handle.registeredTools().size();
+    }
+
+    String source = resolveExecuteSqlSource(config);
+    SqlToolConfig desired = BuiltinTools.executeSql(source, handle.executeSqlReadonly());
+    SqlToolConfig current = handle.registeredTools().get(BuiltinTools.EXECUTE_SQL_NAME);
+    if (desired.equals(current)) {
+      return handle.registeredTools().size();
+    }
+
+    validateSelectedTools(List.of(desired));
+    McpSyncServer server = handle.server();
+    if (current != null) {
+      server.removeTool(BuiltinTools.EXECUTE_SQL_NAME);
+    }
+    server.addTool(buildSpec(desired, handle.sources(), handle.toolSpecContext()));
+    handle.registeredTools().put(BuiltinTools.EXECUTE_SQL_NAME, desired);
+    log.info("Registered built-in tool '{}' (source: {})", desired.name(), source);
+    return handle.registeredTools().size();
+  }
+
+  /**
+   * Picks the database source for {@code execute_sql}. When multiple sources exist, the first
+   * key in YAML merge order ({@link ToolsConfig#sources()} insertion order) is used.
+   */
+  static String resolveExecuteSqlSource(ToolsConfig config) {
+    if (config.sources().isEmpty()) {
+      throw new IllegalArgumentException(
+          "No sources defined; execute_sql requires a database source");
+    }
+    return config.sources().keySet().iterator().next();
   }
 
   /**
@@ -285,6 +357,7 @@ public final class McpServerRunner {
       Map<String, SqlToolConfig> previousTools = new HashMap<>(handle.registeredTools());
       try {
         applyReloadPlan(handle, config, selected, plan);
+        ensureExecuteSqlRegistered(handle, config);
         handle.server().notifyToolsListChanged();
         log.info("YAML reload applied: {} removed, {} added",
             plan.toRemove().size(), plan.toAdd().size());
@@ -357,6 +430,9 @@ public final class McpServerRunner {
 
     for (Map.Entry<String, SqlToolConfig> entry : registered.entrySet()) {
       String name = entry.getKey();
+      if (BuiltinTools.EXECUTE_SQL_NAME.equals(name)) {
+        continue;
+      }
       SqlToolConfig newConfig = selected.get(name);
       if (newConfig == null || !entry.getValue().equals(newConfig)) {
         toRemove.add(name);

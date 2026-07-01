@@ -47,6 +47,7 @@ public final class Main {
              --list-tools         Print all enabled tools defined in the YAML file and exit
              --env-file <path>    .env file for ${VAR} interpolation (default: ./.env)
              --no-reload          Disable hot-reload of tools YAML (env: YAML_AUTO_RELOAD)
+             --execute-sql        Enable the execute_sql tool (overrides env: IBMI_ENABLE_EXECUTE_SQL)
              --version            Print version and exit
         -h,  --help               Show this help
       """;
@@ -64,6 +65,7 @@ public final class Main {
     boolean listToolsets = false;
     boolean listTools = false;
     boolean noReload = false;
+    boolean executeSql = false;
 
     for (int i = 0; i < args.length; i++) {
       switch (args[i]) {
@@ -73,6 +75,7 @@ public final class Main {
         case "--list-toolsets" -> listToolsets = true;
         case "--list-tools" -> listTools = true;
         case "--no-reload" -> noReload = true;
+        case "--execute-sql" -> executeSql = true;
         case "--version" -> {
           System.out.println(McpServerRunner.SERVER_NAME + " " + McpServerRunner.SERVER_VERSION);
           return;
@@ -116,6 +119,11 @@ public final class Main {
     }
 
     boolean yamlAutoReload = resolveYamlAutoReload(env, noReload);
+    boolean enableExecuteSql = resolveExecuteSql(env, executeSql);
+    boolean executeSqlReadonly = resolveExecuteSqlReadonly(env);
+
+
+
     CountDownLatch shutdownLatch = new CountDownLatch(1);
     AtomicBoolean shuttingDown = new AtomicBoolean(false);
     McpServerRunner.ServerHandle[] handleSlot = new McpServerRunner.ServerHandle[1];
@@ -130,7 +138,8 @@ public final class Main {
         System.in, () -> new Thread(shutdown, "stdin-eof").start());
     Runtime.getRuntime().addShutdownHook(new Thread(shutdown, "shutdown-cleanup"));
 
-    handleSlot[0] = McpServerRunner.start(config, selected, stdin, handleSlot);
+    handleSlot[0] = McpServerRunner.start(
+        config, selected, stdin, handleSlot, enableExecuteSql, executeSqlReadonly);
 
     if (yamlAutoReload) {
       try {
@@ -220,4 +229,25 @@ public final class Main {
     System.err.println(USAGE);
     System.exit(2);
   }
+
+  static boolean resolveExecuteSql(Map<String, String> env, boolean executeSqlCli) {
+  if (executeSqlCli) {
+    return true;  // --execute-sql wins over env
+  }
+  return isTruthy(env.get("IBMI_ENABLE_EXECUTE_SQL"));  // default false when unset
+}
+
+  static boolean resolveExecuteSqlReadonly(Map<String, String> env) {
+    String value = env.get("IBMI_EXECUTE_SQL_READONLY");
+    if (value == null || value.isBlank()) {
+      return true;  // default read-only ON
+    }
+    return isTruthy(value);
+  }
+
+  private static boolean isTruthy(String value) {
+    return "true".equalsIgnoreCase(value) || "1".equals(value);
+  }
+
+
 }
