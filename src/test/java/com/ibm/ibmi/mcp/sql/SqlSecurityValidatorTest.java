@@ -60,4 +60,64 @@ class SqlSecurityValidatorTest {
     assertThrows(SecurityException.class, () -> SqlSecurityValidator.validate(
         "SELECT 'way too long for the limit' FROM SYSIBM.SYSDUMMY1", config));
   }
+
+  @Test
+  void writeKeywordInsideBlockCommentIgnored() {
+    assertDoesNotThrow(() -> SqlSecurityValidator.validate(
+        "SELECT 1 /* DELETE */ FROM T", SecurityConfig.DEFAULTS));
+  }
+
+  @Test
+  void writeKeywordInsideDoubleQuotedIdentifierIgnored() {
+    assertDoesNotThrow(() -> SqlSecurityValidator.validate(
+        "SELECT \"DELETE\" FROM T", SecurityConfig.DEFAULTS));
+  }
+
+  @Test
+  void multiStatementWithWriteRejected() {
+    assertThrows(SecurityException.class, () -> SqlSecurityValidator.validate(
+        "SELECT 1; DELETE FROM T", SecurityConfig.DEFAULTS));
+  }
+
+  @Test
+  void callProcedureRejected() {
+    assertThrows(SecurityException.class, () -> SqlSecurityValidator.validate(
+        "CALL SOMEPROC()", SecurityConfig.DEFAULTS));
+  }
+
+  @Test
+  void cteWithSubSelectPasses() {
+    assertDoesNotThrow(() -> SqlSecurityValidator.validate(
+        "WITH X AS (SELECT 1 FROM SYSIBM.SYSDUMMY1) SELECT * FROM X",
+        SecurityConfig.DEFAULTS));
+  }
+
+  @Test
+  void escapedQuoteStringContainingDropPasses() {
+    assertDoesNotThrow(() -> SqlSecurityValidator.validate(
+        "SELECT 'can''t DROP'", SecurityConfig.DEFAULTS));
+  }
+
+  @Test
+  void forbiddenKeywordTokenScanIgnoresStringLiteral() {
+    SecurityConfig config = new SecurityConfig(null, null, List.of("FORBIDDEN"));
+    assertDoesNotThrow(() -> SqlSecurityValidator.validate(
+        "SELECT 'FORBIDDEN' FROM T", config));
+    assertThrows(SecurityException.class, () -> SqlSecurityValidator.validate(
+        "SELECT FORBIDDEN FROM T", config));
+  }
+
+  @Test
+  void tokenizerFailureUsesRegexFallback() {
+    assertThrows(SecurityException.class, () -> SqlSecurityValidator.validate(
+        "SELECT 'unclosed; DELETE FROM T", SecurityConfig.DEFAULTS));
+  }
+
+  @Test
+  void fallbackStripHandlesEscapedQuotesInString() {
+    // Unclosed quoted identifier forces tokenizer failure; fallback must still strip
+    // 'can''t DROP' as one literal (not treat the inner quote as closing the string).
+    assertDoesNotThrow(() -> SqlSecurityValidator.validate(
+        "SELECT 'can''t DROP' FROM T\"", SecurityConfig.DEFAULTS));
+  }
 }
