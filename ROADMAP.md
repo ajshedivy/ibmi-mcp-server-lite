@@ -75,9 +75,11 @@ Replace the brittle keyword-regex read-only check with a real Db2 for i statemen
 
 > **Why these together:** Security hardening is sequenced after the runtime and config layers are trustworthy so the new validator is exercised against real, varied tool loads. The two issues are tightly coupled: execute_sql is the riskiest surface in the server, so it must land on the hardened classifier from real-sql-security-validation rather than the regex it replaces — hence both live in this milestone with the classifier ordered first. Both are 'advanced' sql-area work, a deliberate difficulty step-up that rewards interns who have completed earlier milestones.
 
+**Implemented:**
+- ✅ [#13](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/13) — Tokenizer-based SQL security validation (`SqlTokenizer` + statement-type classifier, regex fallback)
+
 | # | Issue | Difficulty | Estimate |
 |---|---|---|---|
-| [#13](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/13) | [Replace regex read-only check with a Db2 for i tokenizer/statement-type classifier](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/13) | 🔴 advanced | L (1-2 weeks) |
 | [#14](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/14) | [Add the built-in execute_sql tool gated by IBMI_ENABLE_EXECUTE_SQL](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/14) | 🔴 advanced | M (3-5 days) |
 
 ## M5 — HTTP Transport & Deployment
