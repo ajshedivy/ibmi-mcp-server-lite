@@ -1,26 +1,35 @@
 package com.ibm.ibmi.mcp.sql;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.regex.Pattern;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.ibm.ibmi.mcp.config.SecurityConfig;
+import com.ibm.ibmi.mcp.sql.SqlTokenizer.Token;
+import com.ibm.ibmi.mcp.sql.SqlTokenizer.TokenType;
 
 /**
- * Basic SQL safety checks applied before execution. Defaults mirror the reference server:
+ * SQL safety checks applied before execution. Defaults mirror the reference server:
  * read-only is enforced unless a tool explicitly sets {@code security.readOnly: false},
  * and statements longer than 10000 characters are rejected.
  *
- * <p>This MVP uses the reference server's regex fallback strategy: string literals are
- * stripped, then the statement must start with SELECT or WITH and must not contain a
- * dangerous keyword. The reference implementation's primary path uses a full Db2 SQL
- * tokenizer/parser (vscode-db2i) — porting that is a TODO.
+ * <p>Primary validation uses {@link SqlTokenizer} to classify statement types (only
+ * {@code SELECT} and {@code WITH} pass read-only) and to scan forbidden keywords while
+ * ignoring string literals, comments, and quoted identifiers. When tokenization fails,
+ * a regex fallback strips literals and comments then scans dangerous keywords/patterns.
  */
 public final class SqlSecurityValidator {
 
+  private static final Logger LOG = LoggerFactory.getLogger(SqlSecurityValidator.class);
+
   public static final int DEFAULT_MAX_QUERY_LENGTH = 10_000;
 
-  /** Reference server's DANGEROUS_OPERATIONS fallback list. */
+  /** Reference server's DANGEROUS_OPERATIONS fallback list (regex path only). */
   private static final List<String> DANGEROUS_OPERATIONS = List.of(
       "INSERT", "UPDATE", "DELETE", "MERGE", "TRUNCATE", "DROP", "CREATE", "ALTER",
       "RENAME", "CALL", "EXEC", "EXECUTE", "SET", "DECLARE", "GRANT", "REVOKE", "DENY",
@@ -28,8 +37,20 @@ public final class SqlSecurityValidator {
       "BACKUP", "RESTORE", "DUMP", "LOCK", "UNLOCK", "COMMIT", "ROLLBACK", "SAVEPOINT",
       "QCMDEXC", "SQL_EXECUTE_IMMEDIATE");
 
-  private static final Pattern STRING_LITERAL = Pattern.compile("'[^']*'");
+  private static final Pattern STRING_LITERAL = Pattern.compile("'(?:''|[^'])*'");
   private static final Pattern LINE_COMMENT = Pattern.compile("--[^\\n]*");
+  private static final Pattern BLOCK_COMMENT = Pattern.compile("/\\*[\\s\\S]*?\\*/");
+
+  private static final Pattern[] DANGEROUS_PATTERNS = {
+      // Multiple statement patterns (SQL injection via statement chaining)
+      Pattern.compile(";\\s*(DROP|DELETE|INSERT|UPDATE|CREATE|ALTER)", Pattern.CASE_INSENSITIVE),
+      // Union-based attacks (SQL injection via UNION with dangerous operations)
+      Pattern.compile(
+          "\\bUNION\\s+(ALL\\s+)?\\s*\\(\\s*(DROP|DELETE|INSERT|UPDATE)",
+          Pattern.CASE_INSENSITIVE),
+      // REPLACE statement (MySQL-specific write operation)
+      Pattern.compile("\\bREPLACE\\s+INTO\\b", Pattern.CASE_INSENSITIVE),
+  };
 
   private SqlSecurityValidator() {}
 
@@ -44,31 +65,109 @@ public final class SqlSecurityValidator {
           "Query exceeds maximum length of " + maxLength + " characters");
     }
 
-    String stripped = LINE_COMMENT.matcher(STRING_LITERAL.matcher(sql).replaceAll("''"))
-        .replaceAll("").trim();
-    String upper = stripped.toUpperCase(Locale.ROOT);
-
     if (effective.forbiddenKeywords() != null) {
-      for (String keyword : effective.forbiddenKeywords()) {
-        if (containsWord(upper, keyword.toUpperCase(Locale.ROOT))) {
-          throw new SecurityException("Query contains forbidden keyword: " + keyword);
-        }
-      }
+      validateForbiddenKeywords(sql, effective.forbiddenKeywords());
     }
 
     boolean readOnly = effective.readOnly() == null || effective.readOnly();
     if (readOnly) {
-      if (!upper.startsWith("SELECT") && !upper.startsWith("WITH")) {
-        throw new SecurityException(
-            "Only SELECT/WITH statements are allowed for read-only tools");
+      validateReadOnly(sql);
+    }
+  }
+
+  private static void validateForbiddenKeywords(String sql, List<String> forbiddenKeywords) {
+    try {
+      validateForbiddenKeywordsToken(sql, forbiddenKeywords);
+    } catch (SqlTokenizerException e) {
+      LOG.warn("SQL tokenization failed for forbidden-keyword check, using regex fallback: {}",
+          e.getMessage());
+      validateForbiddenKeywordsFallback(sql, forbiddenKeywords);
+    }
+  }
+
+  private static void validateForbiddenKeywordsToken(
+      String sql, List<String> forbiddenKeywords) {
+    Set<String> forbidden = new HashSet<>();
+    for (String keyword : forbiddenKeywords) {
+      forbidden.add(keyword.toUpperCase(Locale.ROOT));
+    }
+
+    for (Token token : SqlTokenizer.tokenize(sql)) {
+      if (isSkippedForKeywordScan(token.type())) {
+        continue;
       }
-      for (String op : DANGEROUS_OPERATIONS) {
-        if (containsWord(upper, op)) {
-          throw new SecurityException(
-              "Read-only validation failed: statement contains '" + op + "'");
-        }
+      if (token.type() == TokenType.WORD && forbidden.contains(token.value())) {
+        throw new SecurityException("Query contains forbidden keyword: " + token.value());
       }
     }
+  }
+
+  private static void validateForbiddenKeywordsFallback(
+      String sql, List<String> forbiddenKeywords) {
+    String stripped = stripForFallback(sql).toUpperCase(Locale.ROOT);
+    for (String keyword : forbiddenKeywords) {
+      if (containsWord(stripped, keyword.toUpperCase(Locale.ROOT))) {
+        throw new SecurityException("Query contains forbidden keyword: " + keyword);
+      }
+    }
+  }
+
+  private static void validateReadOnly(String sql) {
+    try {
+      validateReadOnlyToken(sql);
+    } catch (SqlTokenizerException e) {
+      LOG.warn("SQL tokenization failed for read-only check, using regex fallback: {}",
+          e.getMessage());
+      validateReadOnlyFallback(sql);
+    }
+  }
+
+  private static void validateReadOnlyToken(String sql) {
+    List<Token> tokens = SqlTokenizer.tokenize(sql);
+    List<List<Token>> statements = SqlTokenizer.splitStatements(tokens);
+
+    if (statements.isEmpty()) {
+      throw new SecurityException("Read-only validation failed: UNKNOWN");
+    }
+
+    for (List<Token> statement : statements) {
+      StatementType type = SqlTokenizer.classifyStatement(statement);
+      if (!type.isReadOnly()) {
+        throw new SecurityException("Read-only validation failed: " + type.name());
+      }
+    }
+  }
+
+  private static void validateReadOnlyFallback(String sql) {
+    String stripped = stripForFallback(sql).toUpperCase(Locale.ROOT);
+
+    for (String op : DANGEROUS_OPERATIONS) {
+      if (containsWord(stripped, op)) {
+        throw new SecurityException(
+            "Read-only validation failed: statement contains '" + op + "'");
+      }
+    }
+
+    for (Pattern pattern : DANGEROUS_PATTERNS) {
+      if (pattern.matcher(stripped).find()) {
+        throw new SecurityException(
+            "Read-only validation failed: dangerous pattern detected");
+      }
+    }
+  }
+
+  private static boolean isSkippedForKeywordScan(TokenType type) {
+    return type == TokenType.STRING
+        || type == TokenType.LINE_COMMENT
+        || type == TokenType.BLOCK_COMMENT
+        || type == TokenType.QUOTED_NAME;
+  }
+
+  private static String stripForFallback(String sql) {
+    String stripped = STRING_LITERAL.matcher(sql).replaceAll("''");
+    stripped = LINE_COMMENT.matcher(stripped).replaceAll("");
+    stripped = BLOCK_COMMENT.matcher(stripped).replaceAll("");
+    return stripped;
   }
 
   private static boolean containsWord(String text, String word) {
