@@ -44,6 +44,31 @@ python3 scripts/smoke-test.py
 > match a name in the Mapepire server certificate's Subject Alternative Name. See
 > [docs/running-on-ibmi.md](docs/running-on-ibmi.md#tls-hostname-verification).
 
+### HTTP transport (daemon mode)
+
+For long-running deployment (e.g. Service Commander on IBM i), use Streamable HTTP instead
+of per-client stdio:
+
+```bash
+java -jar target/ibmi-mcp-server-lite-0.1.0.jar \
+  --tools tools/sample-tools.yaml \
+  --transport http
+```
+
+Defaults: bind `0.0.0.0:3010`, MCP endpoint `/mcp`. Override via flags or environment:
+
+| Flag | Environment variable | Default |
+|------|---------------------|---------|
+| `--transport http` | `MCP_TRANSPORT_TYPE` | `stdio` |
+| `--http-port` | `MCP_HTTP_PORT` | `3010` |
+| `--http-host` | `MCP_HTTP_HOST` | `0.0.0.0` |
+| `--http-endpoint` | `MCP_HTTP_ENDPOINT_PATH` | `/mcp` |
+
+CLI flags win over environment variables. The HTTP transport is **unauthenticated** for
+now (no auth, CORS, or `/healthz` — see roadmap for planned additions). YAML hot-reload
+(`YAML_AUTO_RELOAD`) works in HTTP mode but is best-effort when multiple clients are
+connected concurrently.
+
 ### Using it from an MCP client
 
 Any MCP client that speaks stdio works. Example configuration (Claude Desktop /
@@ -213,9 +238,9 @@ runtime gap on IBM i** — the one open blocker for running the server on the sy
 
 ## What's deliberately missing
 
-This MVP implements a faithful subset of the reference server. HTTP transport,
-the full SQL security parser, structured per-call logging, and more are sequenced into
-milestones — each tracked as a GitHub issue with pointers into the reference
-implementation — in the [**roadmap**](ROADMAP.md)
+This MVP implements a faithful subset of the reference server. Auth/CORS on HTTP,
+`GET /healthz`, the full SQL security parser, and more are sequenced into milestones —
+each tracked as a GitHub issue with pointers into the reference implementation — in the
+[**roadmap**](ROADMAP.md)
 ([milestones](https://github.com/ajshedivy/ibmi-mcp-server-lite/milestones) ·
 [good first issues](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues?q=is%3Aopen+label%3A%22good+first+issue%22)).

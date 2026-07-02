@@ -1,10 +1,8 @@
 # Service Commander (sc) unit definition, installed to
 # /QOpenSys/etc/sc/services/ibmi-mcp-server-lite.yaml by the RPM.
 #
-# NOTE: sc manages long-running daemons. An MCP *stdio* server is spawned
-# per-client and doesn't fit that model — this definition becomes useful once
-# the HTTP transport (TODO) exists. check_alive assumes the reference
-# server's HTTP port (3010).
+# sc manages long-running daemons. Use --transport http for daemon mode;
+# check_alive probes the default HTTP port (3010).
 name: IBM i MCP Server Lite
 dir: .
 start_cmd: /QOpenSys/pkgs/bin/ibmi-mcp-server-lite --transport http
