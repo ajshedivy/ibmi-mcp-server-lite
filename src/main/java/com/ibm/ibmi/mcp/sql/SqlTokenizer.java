@@ -176,18 +176,18 @@ public final class SqlTokenizer {
    * constructor behavior).
    */
   public static StatementType classifyStatement(List<Token> tokens) {
-    int start = 0;
-    if (tokens.size() >= 2
-        && tokens.get(0).type() == TokenType.WORD
-        && "EXEC".equals(tokens.get(0).value())
-        && tokens.get(1).type() == TokenType.WORD
-        && "SQL".equals(tokens.get(1).value())) {
-      start = 2;
-    } else if (tokens.size() >= 2
-        && tokens.get(0).type() == TokenType.WORD
-        && tokens.get(1).type() == TokenType.PUNCT
-        && ":".equals(tokens.get(1).value())) {
-      start = 2;
+    int start = skipLeadingComments(tokens, 0);
+    if (tokens.size() >= start + 2
+        && tokens.get(start).type() == TokenType.WORD
+        && "EXEC".equals(tokens.get(start).value())
+        && tokens.get(start + 1).type() == TokenType.WORD
+        && "SQL".equals(tokens.get(start + 1).value())) {
+      start = skipLeadingComments(tokens, start + 2);
+    } else if (tokens.size() >= start + 2
+        && tokens.get(start).type() == TokenType.WORD
+        && tokens.get(start + 1).type() == TokenType.PUNCT
+        && ":".equals(tokens.get(start + 1).value())) {
+      start = skipLeadingComments(tokens, start + 2);
     }
 
     for (int i = start; i < tokens.size(); i++) {
@@ -197,5 +197,18 @@ public final class SqlTokenizer {
       }
     }
     return StatementType.UNKNOWN;
+  }
+
+  private static int skipLeadingComments(List<Token> tokens, int from) {
+    int i = from;
+    while (i < tokens.size()) {
+      TokenType type = tokens.get(i).type();
+      if (type == TokenType.LINE_COMMENT || type == TokenType.BLOCK_COMMENT) {
+        i++;
+      } else {
+        break;
+      }
+    }
+    return i;
   }
 }

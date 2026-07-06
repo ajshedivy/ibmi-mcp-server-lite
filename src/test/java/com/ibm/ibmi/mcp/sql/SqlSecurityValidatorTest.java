@@ -105,6 +105,18 @@ class SqlSecurityValidatorTest {
   }
 
   @Test
+  void leadingCommentBeforeExecSqlSelectPasses() {
+    assertDoesNotThrow(() -> SqlSecurityValidator.validate(
+        "/* comment */ EXEC SQL SELECT 1 FROM SYSIBM.SYSDUMMY1", SecurityConfig.DEFAULTS));
+  }
+
+  @Test
+  void leadingCommentBeforeLabelSelectPasses() {
+    assertDoesNotThrow(() -> SqlSecurityValidator.validate(
+        "-- comment\nMYLABEL: SELECT 1 FROM SYSIBM.SYSDUMMY1", SecurityConfig.DEFAULTS));
+  }
+
+  @Test
   void escapedQuoteStringContainingDropPasses() {
     assertDoesNotThrow(() -> SqlSecurityValidator.validate(
         "SELECT 'can''t DROP'", SecurityConfig.DEFAULTS));
