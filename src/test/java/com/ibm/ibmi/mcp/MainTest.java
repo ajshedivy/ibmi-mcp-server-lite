@@ -1,5 +1,6 @@
 package com.ibm.ibmi.mcp;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -141,5 +142,31 @@ class MainTest {
     Files.writeString(envFile, "YAML_AUTO_RELOAD=false\n");
     Map<String, String> env = com.ibm.ibmi.mcp.util.DotEnv.environment(envFile);
     assertFalse(Main.resolveYamlAutoReload(env, false));
+  }
+
+  @Test
+  void resolveConfigValue_readsTransportFromDotEnvFile(@TempDir Path tempDir) throws Exception {
+    Path envFile = tempDir.resolve(".env");
+    Files.writeString(envFile, """
+        MCP_TRANSPORT_TYPE=http
+        MCP_HTTP_PORT=9090
+        MCP_HTTP_HOST=127.0.0.1
+        MCP_HTTP_ENDPOINT_PATH=/api/mcp
+        """);
+    Map<String, String> env = com.ibm.ibmi.mcp.util.DotEnv.environment(envFile);
+
+    assertEquals("http", Main.resolveConfigValue(null, env, "MCP_TRANSPORT_TYPE", "stdio"));
+    assertEquals("9090", Main.resolveConfigValue(null, env, "MCP_HTTP_PORT", "3010"));
+    assertEquals("127.0.0.1", Main.resolveConfigValue(null, env, "MCP_HTTP_HOST", "0.0.0.0"));
+    assertEquals("/api/mcp", Main.resolveConfigValue(null, env, "MCP_HTTP_ENDPOINT_PATH", "/mcp"));
+  }
+
+  @Test
+  void resolveConfigValue_cliOverridesDotEnvFile(@TempDir Path tempDir) throws Exception {
+    Path envFile = tempDir.resolve(".env");
+    Files.writeString(envFile, "MCP_TRANSPORT_TYPE=http\n");
+    Map<String, String> env = com.ibm.ibmi.mcp.util.DotEnv.environment(envFile);
+
+    assertEquals("stdio", Main.resolveConfigValue("stdio", env, "MCP_TRANSPORT_TYPE", "stdio"));
   }
 }

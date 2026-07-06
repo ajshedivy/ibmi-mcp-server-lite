@@ -49,7 +49,7 @@ public final class Main {
         -ts, --toolsets <a,b>           Only register tools in these toolsets (env: SELECTED_TOOLSETS)
              --list-toolsets            Print toolsets defined in the YAML file and exit
              --list-tools               Print all enabled tools defined in the YAML file and exit
-             --env-file <path>          .env file for ${VAR} interpolation (default: ./.env)
+             --env-file <path>          .env file for ${VAR} interpolation and env vars (default: ./.env)
              --no-reload                Disable hot-reload of tools YAML (env: YAML_AUTO_RELOAD)
              --version                  Print version and exit
              --transport <stdio|http>   Transport (default: stdio; env: MCP_TRANSPORT_TYPE)
@@ -69,10 +69,10 @@ public final class Main {
     String toolsPath = System.getenv("TOOLS_YAML_PATH");
     String toolsetsCsv = System.getenv("SELECTED_TOOLSETS");
     String envFile = ".env";
-    String transport = orDefault(System.getenv("MCP_TRANSPORT_TYPE"), "stdio");
-    String httpPort = orDefault(System.getenv("MCP_HTTP_PORT"), String.valueOf(TransportConfig.DEFAULT_PORT));
-    String httpHost = orDefault(System.getenv("MCP_HTTP_HOST"), TransportConfig.DEFAULT_HOST);
-    String httpEndpoint = orDefault(System.getenv("MCP_HTTP_ENDPOINT_PATH"), TransportConfig.DEFAULT_ENDPOINT);
+    String transport = null;
+    String httpPort = null;
+    String httpHost = null;
+    String httpEndpoint = null;
     boolean listToolsets = false;
     boolean listTools = false;
     boolean noReload = false;
@@ -101,6 +101,14 @@ public final class Main {
       }
     }
 
+    Map<String, String> env = DotEnv.environment(Path.of(envFile));
+
+    transport = resolveConfigValue(transport, env, "MCP_TRANSPORT_TYPE", "stdio");
+    httpPort = resolveConfigValue(
+        httpPort, env, "MCP_HTTP_PORT", String.valueOf(TransportConfig.DEFAULT_PORT));
+    httpHost = resolveConfigValue(httpHost, env, "MCP_HTTP_HOST", TransportConfig.DEFAULT_HOST);
+    httpEndpoint = resolveConfigValue(
+        httpEndpoint, env, "MCP_HTTP_ENDPOINT_PATH", TransportConfig.DEFAULT_ENDPOINT);
     transport = transport.toLowerCase(Locale.ROOT);
 
     TransportConfig transportConfig;
@@ -114,8 +122,6 @@ public final class Main {
     if (toolsPath == null || toolsPath.isBlank()) {
       fail("No tools YAML path given (use --tools or TOOLS_YAML_PATH)");
     }
-
-    Map<String, String> env = DotEnv.environment(Path.of(envFile));
     MergeOptions mergeOpts = MergeOptions.fromEnv(env);
     ToolsConfig config;
     try {
@@ -219,6 +225,15 @@ public final class Main {
 
   private static String orDefault(String value, String fallback) {
     return value != null && !value.isBlank() ? value : fallback;
+  }
+
+  /**
+   * CLI override, then merged environment ({@link DotEnv#environment} — process env
+   * wins over the {@code .env} file), then default.
+   */
+  static String resolveConfigValue(
+      String cliOverride, Map<String, String> env, String envKey, String defaultValue) {
+    return orDefault(cliOverride, orDefault(env.get(envKey), defaultValue));
   }
 
   private static void printToolsets(ToolsConfig config) {
