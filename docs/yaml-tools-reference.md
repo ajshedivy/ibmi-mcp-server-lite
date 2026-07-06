@@ -131,14 +131,16 @@ default binds as an empty string when omitted.
 security:
   readOnly: true             # default true even when this block is absent
   maxQueryLength: 10000      # default 10000 characters
-  forbiddenKeywords: [DROP]  # extra keywords rejected (word-boundary, literals ignored)
+  forbiddenKeywords: [DROP]  # extra keywords rejected (token scan; literals/comments ignored)
 ```
 
-With `readOnly` in effect (the default), only statements starting with `SELECT` or
-`WITH` pass, and a dangerous-keyword scan (INSERT/UPDATE/DELETE/DROP/CALL/…) runs with
-string literals stripped. Validation happens at startup for every registered tool, and
-again at call time (on the processed SQL) for tools that declare a `security` block.
-Set `security.readOnly: false` explicitly to allow data-changing statements.
+With `readOnly` in effect (the default), every semicolon-separated statement must
+classify as `SELECT` or `WITH` via a SQL tokenizer (`EXEC SQL` and `label:` prefixes are
+skipped before classification). If tokenization fails, a regex fallback strips literals
+and comments and scans for dangerous keywords. Validation runs at startup for every
+registered tool, and again at call time (on the processed SQL) for tools that declare a
+`security` block. Set `security.readOnly: false` explicitly to allow data-changing
+statements.
 
 ### `annotations`
 
@@ -213,6 +215,7 @@ a newly added source will fail reload until the process is restarted.
 
 ## Differences from the reference server (by design, for now)
 
-- Simplified read-only validation (regex strategy only; the reference's primary path is
-  a full SQL tokenizer/parser).
+- Lightweight tokenizer for read-only validation (not the reference's full vscode-db2i
+  parser); top-level statement-type classification only — nested DML inside a `SELECT` or
+  `WITH` is not checked separately (same as the reference primary path).
 - No `typescript_tools` section, no built-in tools (`execute_sql`, `generate_sql`).
