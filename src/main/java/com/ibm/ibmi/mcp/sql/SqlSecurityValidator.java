@@ -123,6 +123,9 @@ public final class SqlSecurityValidator {
   }
 
   private static void validateReadOnlyToken(String sql) {
+    // Top-level statement type only (leading keyword per segment): nested DML inside a
+    // WITH/SELECT (e.g. "WITH t AS (DELETE FROM x) SELECT * FROM t") is not checked here
+    // but fails at Db2 execution — same as the reference server's parser path.
     List<Token> tokens = SqlTokenizer.tokenize(sql);
     List<List<Token>> statements = SqlTokenizer.splitStatements(tokens);
 
