@@ -104,16 +104,21 @@ public final class Main {
     Map<String, String> env = DotEnv.environment(Path.of(envFile));
 
     transport = resolveConfigValue(transport, env, "MCP_TRANSPORT_TYPE", "stdio");
-    httpPort = resolveConfigValue(
-        httpPort, env, "MCP_HTTP_PORT", String.valueOf(TransportConfig.DEFAULT_PORT));
-    httpHost = resolveConfigValue(httpHost, env, "MCP_HTTP_HOST", TransportConfig.DEFAULT_HOST);
-    httpEndpoint = resolveConfigValue(
-        httpEndpoint, env, "MCP_HTTP_ENDPOINT_PATH", TransportConfig.DEFAULT_ENDPOINT);
     transport = transport.toLowerCase(Locale.ROOT);
 
-    TransportConfig transportConfig;
+    boolean httpMode = "http".equals(transport);
+    TransportConfig transportConfig = null;
     try {
-      transportConfig = resolveTransportConfig(transport, httpHost, httpPort, httpEndpoint);
+      if (httpMode) {
+        httpPort = resolveConfigValue(
+            httpPort, env, "MCP_HTTP_PORT", String.valueOf(TransportConfig.DEFAULT_PORT));
+        httpHost = resolveConfigValue(httpHost, env, "MCP_HTTP_HOST", TransportConfig.DEFAULT_HOST);
+        httpEndpoint = resolveConfigValue(
+            httpEndpoint, env, "MCP_HTTP_ENDPOINT_PATH", TransportConfig.DEFAULT_ENDPOINT);
+        transportConfig = resolveHttpTransportConfig(httpHost, httpPort, httpEndpoint);
+      } else {
+        validateTransportName(transport);
+      }
     } catch (IllegalArgumentException e) {
       fail(e.getMessage());
       return;
@@ -148,7 +153,6 @@ public final class Main {
     }
 
     boolean yamlAutoReload = resolveYamlAutoReload(env, noReload);
-    boolean httpMode = "http".equals(transport);
     CountDownLatch shutdownLatch = new CountDownLatch(1);
     AtomicBoolean shuttingDown = new AtomicBoolean(false);
     McpServerRunner.ServerHandle[] handleSlot = new McpServerRunner.ServerHandle[1];
@@ -185,17 +189,23 @@ public final class Main {
   }
 
   /**
-   * Validates transport settings. CLI values should already be merged with env defaults.
-   *
-   * @throws IllegalArgumentException when transport or HTTP settings are invalid
+   * @throws IllegalArgumentException when transport is not {@code stdio} or {@code http}
    */
-  static TransportConfig resolveTransportConfig(
-      String transport, String httpHost, String httpPort, String httpEndpoint) {
+  static void validateTransportName(String transport) {
     transport = transport.toLowerCase(Locale.ROOT);
     if (!"stdio".equals(transport) && !"http".equals(transport)) {
       throw new IllegalArgumentException(
           "Invalid transport: " + transport + " (use stdio or http)");
     }
+  }
+
+  /**
+   * Validates HTTP bind settings. CLI values should already be merged with env defaults.
+   *
+   * @throws IllegalArgumentException when HTTP settings are invalid
+   */
+  static TransportConfig resolveHttpTransportConfig(
+      String httpHost, String httpPort, String httpEndpoint) {
     if (httpHost == null || httpHost.isBlank()) {
       throw new IllegalArgumentException(
           "No HTTP host given (use --http-host or MCP_HTTP_HOST)");

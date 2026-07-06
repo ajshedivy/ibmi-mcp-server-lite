@@ -104,13 +104,15 @@ class HttpTransportIntegrationTest {
 
     JsonNode result = extractJsonRpcResult(callResponse.body());
     JsonNode structured = result.path("structuredContent");
-    if (structured.isMissingNode() || structured.isNull()) {
-      structured = MAPPER.readTree(result.path("content").get(0).path("text").asText());
-    }
+    assertFalse(structured.isMissingNode() || structured.isNull(),
+        "tools/call should return structuredContent over HTTP: " + result);
     assertTrue(structured.has("success"), structured::toString);
-    assertTrue(structured.path("success").asBoolean()
-        || structured.has("error") || structured.has("metadata"),
-        "expected StandardSqlToolOutput shape: " + structured);
+    assertFalse(structured.path("success").asBoolean(),
+        "dummy creds should fail SQL execution: " + structured);
+    assertTrue(structured.has("data"), structured::toString);
+    assertTrue(structured.get("data").isArray(), structured::toString);
+    assertTrue(structured.has("error"), structured::toString);
+    assertFalse(structured.path("error").asText().isBlank(), structured::toString);
   }
 
   @Test

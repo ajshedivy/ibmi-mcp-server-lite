@@ -1,5 +1,6 @@
 package com.ibm.ibmi.mcp;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -10,53 +11,59 @@ import com.ibm.ibmi.mcp.server.TransportConfig;
 class TransportConfigTest {
 
   @Test
-  void resolveTransportConfig_defaultsToStdioSettings() {
-    TransportConfig config = Main.resolveTransportConfig(
-        "stdio", TransportConfig.DEFAULT_HOST, "3010", TransportConfig.DEFAULT_ENDPOINT);
+  void validateTransportName_acceptsStdio() {
+    assertDoesNotThrow(() -> Main.validateTransportName("stdio"));
+    assertDoesNotThrow(() -> Main.validateTransportName("STDIO"));
+  }
+
+  @Test
+  void validateTransportName_acceptsHttp() {
+    assertDoesNotThrow(() -> Main.validateTransportName("http"));
+    assertDoesNotThrow(() -> Main.validateTransportName("HTTP"));
+  }
+
+  @Test
+  void validateTransportName_rejectsInvalidTransport() {
+    assertThrows(IllegalArgumentException.class,
+        () -> Main.validateTransportName("websocket"));
+  }
+
+  @Test
+  void resolveHttpTransportConfig_acceptsDefaults() {
+    TransportConfig config = Main.resolveHttpTransportConfig(
+        TransportConfig.DEFAULT_HOST, "3010", TransportConfig.DEFAULT_ENDPOINT);
     assertEquals(TransportConfig.DEFAULT_HOST, config.httpHost());
     assertEquals(3010, config.httpPort());
     assertEquals(TransportConfig.DEFAULT_ENDPOINT, config.httpEndpoint());
   }
 
   @Test
-  void resolveTransportConfig_acceptsHttp() {
-    TransportConfig config = Main.resolveTransportConfig("http", "127.0.0.1", "8080", "/mcp");
+  void resolveHttpTransportConfig_acceptsCustomSettings() {
+    TransportConfig config = Main.resolveHttpTransportConfig("127.0.0.1", "8080", "/mcp");
     assertEquals("127.0.0.1", config.httpHost());
     assertEquals(8080, config.httpPort());
     assertEquals("/mcp", config.httpEndpoint());
   }
 
   @Test
-  void resolveTransportConfig_acceptsHttpCaseInsensitive() {
-    TransportConfig config = Main.resolveTransportConfig("HTTP", "127.0.0.1", "8080", "/mcp");
-    assertEquals(8080, config.httpPort());
+  void resolveHttpTransportConfig_rejectsInvalidPort() {
+    assertThrows(IllegalArgumentException.class,
+        () -> Main.resolveHttpTransportConfig("0.0.0.0", "not-a-port", "/mcp"));
+    assertThrows(IllegalArgumentException.class,
+        () -> Main.resolveHttpTransportConfig("0.0.0.0", "0", "/mcp"));
+    assertThrows(IllegalArgumentException.class,
+        () -> Main.resolveHttpTransportConfig("0.0.0.0", "70000", "/mcp"));
   }
 
   @Test
-  void resolveTransportConfig_rejectsInvalidTransport() {
+  void resolveHttpTransportConfig_rejectsEndpointWithoutLeadingSlash() {
     assertThrows(IllegalArgumentException.class,
-        () -> Main.resolveTransportConfig("websocket", "0.0.0.0", "3010", "/mcp"));
+        () -> Main.resolveHttpTransportConfig("0.0.0.0", "3010", "mcp"));
   }
 
   @Test
-  void resolveTransportConfig_rejectsInvalidPort() {
+  void resolveHttpTransportConfig_rejectsBlankHost() {
     assertThrows(IllegalArgumentException.class,
-        () -> Main.resolveTransportConfig("http", "0.0.0.0", "not-a-port", "/mcp"));
-    assertThrows(IllegalArgumentException.class,
-        () -> Main.resolveTransportConfig("http", "0.0.0.0", "0", "/mcp"));
-    assertThrows(IllegalArgumentException.class,
-        () -> Main.resolveTransportConfig("http", "0.0.0.0", "70000", "/mcp"));
-  }
-
-  @Test
-  void resolveTransportConfig_rejectsEndpointWithoutLeadingSlash() {
-    assertThrows(IllegalArgumentException.class,
-        () -> Main.resolveTransportConfig("http", "0.0.0.0", "3010", "mcp"));
-  }
-
-  @Test
-  void resolveTransportConfig_rejectsBlankHost() {
-    assertThrows(IllegalArgumentException.class,
-        () -> Main.resolveTransportConfig("http", "  ", "3010", "/mcp"));
+        () -> Main.resolveHttpTransportConfig("  ", "3010", "/mcp"));
   }
 }
