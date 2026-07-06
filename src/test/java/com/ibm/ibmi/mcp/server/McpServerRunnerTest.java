@@ -25,6 +25,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ibm.ibmi.mcp.config.MergeOptions;
 import com.ibm.ibmi.mcp.config.ParameterConfig;
@@ -164,6 +165,66 @@ class McpServerRunnerTest {
         handle, yaml.toString(), env, mergeOpts, Set.of()));
     assertEquals(Set.of("tool_a"), toolNames(handle));
     assertEquals(1, handle.registeredTools().size());
+  }
+
+  @Test
+  void executeSqlAbsentWhenGateDisabled(@TempDir Path tempDir) throws Exception {
+    Path yaml = tempDir.resolve("tools.yaml");
+    Files.writeString(yaml, yamlWithTools("tool_a"));
+    handle = startFromYaml(yaml, Map.of(), false, true);
+
+    assertEquals(Set.of("tool_a"), toolNames(handle));
+    assertFalse(toolNames(handle).contains(BuiltinTools.EXECUTE_SQL_NAME));
+    assertFalse(handle.registeredTools().containsKey(BuiltinTools.EXECUTE_SQL_NAME));
+  }
+
+  @Test
+  void executeSqlRegisteredWhenGateEnabled(@TempDir Path tempDir) throws Exception {
+    Path yaml = tempDir.resolve("tools.yaml");
+    Files.writeString(yaml, yamlWithTools("tool_a"));
+    handle = startFromYaml(yaml, Map.of(), true, true);
+
+    assertTrue(toolNames(handle).contains(BuiltinTools.EXECUTE_SQL_NAME));
+    assertTrue(handle.registeredTools().containsKey(BuiltinTools.EXECUTE_SQL_NAME));
+    assertEquals("ibmi-system",
+        handle.registeredTools().get(BuiltinTools.EXECUTE_SQL_NAME).source());
+  }
+
+  @Test
+  void executeSqlInputSchemaRequiresSqlProperty() throws Exception {
+    String schemaJson = McpServerRunner.ToolSpecContext.create()
+        .schemaBuilder()
+        .buildInputSchema(BuiltinTools.executeSql("ibmi-system", true).parameters());
+    JsonNode schema = new ObjectMapper().readTree(schemaJson);
+
+    assertTrue(schema.get("properties").has("sql"));
+    assertEquals("string", schema.get("properties").get("sql").get("type").asText());
+
+    List<String> required = new java.util.ArrayList<>();
+    schema.get("required").forEach(n -> required.add(n.asText()));
+    assertEquals(List.of("sql"), required);
+  }
+
+  @Test
+  void validateSelectedTools_acceptsExecuteSqlPlaceholderStatement() {
+    SqlToolConfig executeSql = BuiltinTools.executeSql("ibmi-system", true);
+    assertDoesNotThrow(() -> McpServerRunner.validateSelectedTools(List.of(executeSql)));
+  }
+
+  @Test
+  void computeReloadPlan_ignoresRegisteredExecuteSqlBuiltin() {
+    SqlToolConfig toolA = tool("tool_a", "A", "SELECT 1 FROM SYSIBM.SYSDUMMY1");
+    SqlToolConfig executeSql = BuiltinTools.executeSql("ibmi-system", true);
+    Map<String, SqlToolConfig> registered = Map.of(
+        "tool_a", toolA,
+        BuiltinTools.EXECUTE_SQL_NAME, executeSql);
+    Map<String, SqlToolConfig> selected = Map.of("tool_a", toolA);
+
+    McpServerRunner.ToolReloadPlan plan =
+        McpServerRunner.computeReloadPlan(registered, selected);
+
+    assertTrue(plan.toRemove().isEmpty());
+    assertTrue(plan.toAdd().isEmpty());
   }
 
   @Test
@@ -357,8 +418,13 @@ class McpServerRunnerTest {
   }
 
   private static McpServerRunner.ServerHandle startFromYaml(Path yaml, Map<String, String> env) {
+    return startFromYaml(yaml, env, false, true);
+  }
+
+  private static McpServerRunner.ServerHandle startFromYaml(
+      Path yaml, Map<String, String> env, boolean enableExecuteSql, boolean executeSqlReadonly) {
     ToolsConfig config = new YamlConfigLoader(env).load(yaml);
-    return McpServerRunner.startForTests(config, Set.of());
+    return McpServerRunner.startForTests(config, Set.of(), enableExecuteSql, executeSqlReadonly);
   }
 
   private static McpServerRunner.ServerHandle startFromDirectory(Path dir, Map<String, String> env) {

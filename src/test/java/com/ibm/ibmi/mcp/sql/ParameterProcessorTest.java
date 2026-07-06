@@ -99,4 +99,42 @@ class ParameterProcessorTest {
         Map.of("val", "x"));
     assertEquals("SELECT :unknown FROM T WHERE C = ?", bound.sql());
   }
+
+  @Test
+  void directSubstitutionReturnsSqlWithEmptyBindings() {
+    String query = "SELECT 1 FROM SYSIBM.SYSDUMMY1";
+    BoundStatement bound = ParameterProcessor.prepare(
+        tool(":sql", param("sql", "string", null, true)),
+        Map.of("sql", query));
+    assertEquals(query, bound.sql());
+    assertTrue(bound.parameters().isEmpty());
+  }
+
+  @Test
+  void directSubstitutionMissingSqlThrows() {
+    IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+        () -> ParameterProcessor.prepare(
+            tool(":sql", param("sql", "string", null, true)), Map.of()));
+    assertTrue(e.getMessage().contains("sql"));
+    assertTrue(e.getMessage().contains("direct substitution"));
+  }
+
+  @Test
+  void directSubstitutionNonStringSqlThrows() {
+    IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+        () -> ParameterProcessor.prepare(
+            tool(":sql", param("sql", "string", null, true)),
+            Map.of("sql", 42)));
+    assertTrue(e.getMessage().contains("sql"));
+    assertTrue(e.getMessage().contains("direct substitution"));
+  }
+
+  @Test
+  void singleParameterWithFullStatementUsesPositionalBinding() {
+    BoundStatement bound = ParameterProcessor.prepare(
+        tool("SELECT * FROM T WHERE id = :id", param("id", "string", null, true)),
+        Map.of("id", "A00"));
+    assertEquals("SELECT * FROM T WHERE id = ?", bound.sql());
+    assertEquals(List.of("A00"), bound.parameters());
+  }
 }

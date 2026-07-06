@@ -216,4 +216,54 @@ class MainTest {
       System.out.print(Main.resolveConfigValue(null, env, "MCP_TRANSPORT_TYPE", "stdio"));
     }
   }
+
+  @Test
+  void resolveExecuteSql_defaultsToDisabledWhenUnset() {
+    assertFalse(Main.resolveExecuteSql(Map.of(), false));
+  }
+
+  @Test
+  void resolveExecuteSql_readsTruthyValuesFromMergedEnv() {
+    assertTrue(Main.resolveExecuteSql(Map.of("IBMI_ENABLE_EXECUTE_SQL", "true"), false));
+    assertTrue(Main.resolveExecuteSql(Map.of("IBMI_ENABLE_EXECUTE_SQL", "TRUE"), false));
+    assertTrue(Main.resolveExecuteSql(Map.of("IBMI_ENABLE_EXECUTE_SQL", "1"), false));
+  }
+
+  @Test
+  void resolveExecuteSql_disablesForOtherExplicitValues() {
+    assertFalse(Main.resolveExecuteSql(Map.of("IBMI_ENABLE_EXECUTE_SQL", "false"), false));
+    assertFalse(Main.resolveExecuteSql(Map.of("IBMI_ENABLE_EXECUTE_SQL", "0"), false));
+  }
+
+  @Test
+  void resolveExecuteSql_cliFlagOverridesEnv() {
+    assertTrue(Main.resolveExecuteSql(Map.of("IBMI_ENABLE_EXECUTE_SQL", "false"), true));
+    assertTrue(Main.resolveExecuteSql(Map.of(), true));
+  }
+
+  @Test
+  void resolveExecuteSqlReadonly_defaultsToEnabledWhenUnset() {
+    assertTrue(Main.resolveExecuteSqlReadonly(Map.of()));
+  }
+
+  @Test
+  void resolveExecuteSqlReadonly_readsTruthyValuesFromMergedEnv() {
+    assertTrue(Main.resolveExecuteSqlReadonly(Map.of("IBMI_EXECUTE_SQL_READONLY", "true")));
+    assertTrue(Main.resolveExecuteSqlReadonly(Map.of("IBMI_EXECUTE_SQL_READONLY", "1")));
+  }
+
+  @Test
+  void resolveExecuteSqlReadonly_disablesForOtherExplicitValues() {
+    assertFalse(Main.resolveExecuteSqlReadonly(Map.of("IBMI_EXECUTE_SQL_READONLY", "false")));
+    assertFalse(Main.resolveExecuteSqlReadonly(Map.of("IBMI_EXECUTE_SQL_READONLY", "0")));
+  }
+
+  @Test
+  void resolveExecuteSql_readsFromDotEnvFile(@TempDir Path tempDir) throws Exception {
+    Path envFile = tempDir.resolve(".env");
+    Files.writeString(envFile, "IBMI_ENABLE_EXECUTE_SQL=true\n");
+    Map<String, String> env = com.ibm.ibmi.mcp.util.DotEnv.environment(envFile);
+    assertTrue(Main.resolveExecuteSql(env, false));
+  }
+  }
 }

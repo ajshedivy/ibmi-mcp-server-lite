@@ -52,6 +52,9 @@ public final class SqlSecurityValidator {
       Pattern.compile("\\bREPLACE\\s+INTO\\b", Pattern.CASE_INSENSITIVE),
   };
 
+  /** Placeholder-only statements ({@code :sql}) are validated at call time after substitution. */
+  private static final Pattern DIRECT_SUBSTITUTION_PLACEHOLDER = Pattern.compile(":\\w+");
+
   private SqlSecurityValidator() {}
 
   /** @throws SecurityException when the statement violates the effective security config */
@@ -63,6 +66,10 @@ public final class SqlSecurityValidator {
     if (sql.length() > maxLength) {
       throw new SecurityException(
           "Query exceeds maximum length of " + maxLength + " characters");
+    }
+
+    if (isDirectSubstitutionPlaceholder(sql)) {
+      return;
     }
 
     List<String> forbiddenKeywords = effective.forbiddenKeywords();
@@ -163,6 +170,12 @@ public final class SqlSecurityValidator {
     stripped = LINE_COMMENT.matcher(stripped).replaceAll("");
     stripped = BLOCK_COMMENT.matcher(stripped).replaceAll("");
     return stripped;
+  }
+
+  private static boolean isDirectSubstitutionPlaceholder(String sql) {
+    String stripped = LINE_COMMENT.matcher(STRING_LITERAL.matcher(sql).replaceAll("''"))
+        .replaceAll("").trim();
+    return DIRECT_SUBSTITUTION_PLACEHOLDER.matcher(stripped).matches();
   }
 
   private static boolean containsWord(String text, String word) {

@@ -144,4 +144,10 @@ class SqlSecurityValidatorTest {
     assertDoesNotThrow(() -> SqlSecurityValidator.validate(
         "SELECT 'can''t DROP' FROM T\"", SecurityConfig.DEFAULTS));
   }
+
+  @Test
+  void directSubstitutionPlaceholderPassesAtLoadTime() {
+    SecurityConfig readOnly = new SecurityConfig(true, 10_000, null);
+    assertDoesNotThrow(() -> SqlSecurityValidator.validate(":sql", readOnly));
+  }
 }
