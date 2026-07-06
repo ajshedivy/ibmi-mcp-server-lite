@@ -90,9 +90,11 @@ Take the server off per-client stdio and onto a long-lived deployment footprint:
 
 > **Why these together:** Both 'advanced' issues are about how the server runs in production rather than what it computes, so they belong after the feature core (M1–M4) is complete. They are complementary halves of the same deployment story: the HTTP transport gives the server a daemon-friendly long-lived mode, and finish-rpm-packaging is what actually installs and runs that daemon on IBM i via Service Commander. Sequencing transport before packaging means the RPM ships a server that already supports the daemon transport it will be configured to use.
 
+**Implemented:**
+- ✅ [#15](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/15) — Streamable HTTP transport (`--transport http`) via embedded Jetty
+
 | # | Issue | Difficulty | Estimate |
 |---|---|---|---|
-| [#15](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/15) | [Add a Streamable HTTP transport (--transport http) using HttpServletStreamableServerTransportProvider](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/15) | 🔴 advanced | L (1-2 weeks) |
 | [#16](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/16) | [Finish the IBM i RPM packaging pipeline (resolve Java 17, complete spec, enable workflow)](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/16) | 🔴 advanced | L (1-2 weeks) |
 
 ## M6 — Upstream & Test Infrastructure

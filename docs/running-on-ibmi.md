@@ -102,4 +102,5 @@ the `IBMI_BUILD_SYS` / `IBMI_BUILD_USRPRF` / `IBMI_BUILD_PVTKEY` secrets exist. 
 `/QOpenSys/pkgs/{bin,lib}` + `/QOpenSys/etc`, and carries TODO markers (most
 importantly the Java 17 `Requires`). A Service Commander unit
 (`packaging/ibmi/service-commander-def.yaml`) is included for when the HTTP transport
-exists — stdio servers are spawned per-client and don't need a daemon manager.
+exists — stdio servers are spawned per-client and don't need a daemon manager. HTTP serves
+plain text (no TLS); terminate TLS at a reverse proxy or private-network boundary if needed.

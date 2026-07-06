@@ -1,13 +1,16 @@
 package com.ibm.ibmi.mcp;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -141,5 +144,76 @@ class MainTest {
     Files.writeString(envFile, "YAML_AUTO_RELOAD=false\n");
     Map<String, String> env = com.ibm.ibmi.mcp.util.DotEnv.environment(envFile);
     assertFalse(Main.resolveYamlAutoReload(env, false));
+  }
+
+  @Test
+  void resolveConfigValue_readsTransportFromDotEnvFile(@TempDir Path tempDir) throws Exception {
+    Path envFile = tempDir.resolve(".env");
+    Files.writeString(envFile, """
+        MCP_TRANSPORT_TYPE=http
+        MCP_HTTP_PORT=9090
+        MCP_HTTP_HOST=127.0.0.1
+        MCP_HTTP_ENDPOINT_PATH=/api/mcp
+        """);
+    Map<String, String> env = com.ibm.ibmi.mcp.util.DotEnv.environment(envFile);
+
+    assertEquals("http", Main.resolveConfigValue(null, env, "MCP_TRANSPORT_TYPE", "stdio"));
+    assertEquals("9090", Main.resolveConfigValue(null, env, "MCP_HTTP_PORT", "3010"));
+    assertEquals("127.0.0.1", Main.resolveConfigValue(null, env, "MCP_HTTP_HOST", "0.0.0.0"));
+    assertEquals("/api/mcp", Main.resolveConfigValue(null, env, "MCP_HTTP_ENDPOINT_PATH", "/mcp"));
+  }
+
+  @Test
+  void resolveConfigValue_cliOverridesDotEnvFile(@TempDir Path tempDir) throws Exception {
+    Path envFile = tempDir.resolve(".env");
+    Files.writeString(envFile, "MCP_TRANSPORT_TYPE=http\n");
+    Map<String, String> env = com.ibm.ibmi.mcp.util.DotEnv.environment(envFile);
+
+    assertEquals("stdio", Main.resolveConfigValue("stdio", env, "MCP_TRANSPORT_TYPE", "stdio"));
+  }
+
+  @Test
+  void resolveConfigValue_processEnvWinsOverDotEnvFile(@TempDir Path tempDir) throws Exception {
+    Path envFile = tempDir.resolve(".env");
+    Files.writeString(envFile, "MCP_TRANSPORT_TYPE=http\n");
+
+    String java = Path.of(System.getProperty("java.home"), "bin", "java").toString();
+    ProcessBuilder pb = new ProcessBuilder(
+        java, "-cp", System.getProperty("java.class.path"),
+        ProcessEnvProbe.class.getName(),
+        envFile.toAbsolutePath().toString());
+    pb.environment().put("MCP_TRANSPORT_TYPE", "stdio");
+    Process proc = pb.start();
+
+    assertTrue(proc.waitFor(10, TimeUnit.SECONDS), "subprocess timed out");
+    assertEquals(0, proc.exitValue());
+    String output = new String(proc.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+    assertEquals("stdio", output.strip());
+  }
+
+  @Test
+  void stdioIgnoresInvalidHttpPortInDotEnv(@TempDir Path tempDir) throws Exception {
+    Path tempYamlFile = tempDir.resolve("tools-test-fixture.yaml");
+    Files.writeString(tempYamlFile, TEST_YAML_FIXTURE);
+    Path envFile = tempDir.resolve(".env");
+    Files.writeString(envFile, "MCP_HTTP_PORT=not-a-port\n");
+
+    Main.main(new String[] {
+        "--tools", tempYamlFile.toAbsolutePath().toString(),
+        "--env-file", envFile.toAbsolutePath().toString(),
+        "--list-tools"
+    });
+
+    assertTrue(outputStreamCaptor.toString().contains("active_jobs"));
+  }
+
+  /** Subprocess helper: prints resolved MCP_TRANSPORT_TYPE from merged env. */
+  public static final class ProcessEnvProbe {
+    private ProcessEnvProbe() {}
+
+    public static void main(String[] args) {
+      Map<String, String> env = com.ibm.ibmi.mcp.util.DotEnv.environment(Path.of(args[0]));
+      System.out.print(Main.resolveConfigValue(null, env, "MCP_TRANSPORT_TYPE", "stdio"));
+    }
   }
 }

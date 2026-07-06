@@ -28,6 +28,7 @@
     <snakeyaml.version>2.6</snakeyaml.version>
     <slf4j.version>2.0.17</slf4j.version>
     <junit.version>5.11.4</junit.version>
+    <jetty.version>12.0.16</jetty.version>
   </properties>
 
   <dependencyManagement>
@@ -72,6 +73,18 @@
       <groupId>org.slf4j</groupId>
       <artifactId>slf4j-simple</artifactId>
       <version>${slf4j.version}</version>
+    </dependency>
+
+    <!-- Embedded HTTP server for Streamable HTTP MCP transport (Jakarta Servlet 6.x) -->
+    <dependency>
+      <groupId>org.eclipse.jetty</groupId>
+      <artifactId>jetty-server</artifactId>
+      <version>${jetty.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.eclipse.jetty.ee10</groupId>
+      <artifactId>jetty-ee10-servlet</artifactId>
+      <version>${jetty.version}</version>
     </dependency>
 
     <dependency>

@@ -6,6 +6,7 @@ import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
@@ -18,6 +19,7 @@ import com.ibm.ibmi.mcp.config.ToolsConfig;
 import com.ibm.ibmi.mcp.config.ToolsetConfig;
 import com.ibm.ibmi.mcp.config.YamlConfigLoader;
 import com.ibm.ibmi.mcp.server.McpServerRunner;
+import com.ibm.ibmi.mcp.server.TransportConfig;
 import com.ibm.ibmi.mcp.util.DotEnv;
 import com.ibm.ibmi.mcp.util.EofNotifyingInputStream;
 import com.ibm.ibmi.mcp.util.ShutdownGuard;
@@ -27,13 +29,15 @@ import com.ibm.ibmi.mcp.util.ShutdownGuard;
  *
  * <pre>
  * java -jar ibmi-mcp-server-lite.jar --tools ./tools/sample-tools.yaml [--toolsets a,b]
- * java -jar ibmi-mcp-server-lite.jar --tools ./tools/ [--toolsets a,b]
+ * java -jar ibmi-mcp-server-lite.jar --tools ./tools/ [--toolsets a,b] --transport http
  * </pre>
  *
- * The MCP protocol runs over stdio (stdout is reserved for protocol frames; all logging
- * goes to stderr). Configuration can also come from the environment:
- * {@code TOOLS_YAML_PATH}, {@code SELECTED_TOOLSETS}, {@code YAML_AUTO_RELOAD},
- * {@code MCP_LOG_LEVEL}.
+ * The MCP protocol runs over stdio by default (stdout is reserved for protocol frames; all
+ * logging goes to stderr). Use {@code --transport http} for a long-lived Streamable HTTP
+ * daemon. Configuration can also come from the environment: {@code TOOLS_YAML_PATH},
+ * {@code SELECTED_TOOLSETS}, {@code YAML_AUTO_RELOAD}, {@code MCP_LOG_LEVEL},
+ * {@code MCP_TRANSPORT_TYPE}, {@code MCP_HTTP_PORT}, {@code MCP_HTTP_HOST},
+ * {@code MCP_HTTP_ENDPOINT_PATH}.
  */
 public final class Main {
 
@@ -41,14 +45,18 @@ public final class Main {
       Usage: ibmi-mcp-server-lite --tools <file|directory|glob> [options]
 
       Options:
-        -t,  --tools <path>       Tools YAML file, directory, or glob (env: TOOLS_YAML_PATH)
-        -ts, --toolsets <a,b>     Only register tools in these toolsets (env: SELECTED_TOOLSETS)
-             --list-toolsets      Print toolsets defined in the YAML file and exit
-             --list-tools         Print all enabled tools defined in the YAML file and exit
-             --env-file <path>    .env file for ${VAR} interpolation (default: ./.env)
-             --no-reload          Disable hot-reload of tools YAML (env: YAML_AUTO_RELOAD)
-             --version            Print version and exit
-        -h,  --help               Show this help
+        -t,  --tools <path>             Tools YAML file, directory, or glob (env: TOOLS_YAML_PATH)
+        -ts, --toolsets <a,b>           Only register tools in these toolsets (env: SELECTED_TOOLSETS)
+             --list-toolsets            Print toolsets defined in the YAML file and exit
+             --list-tools               Print all enabled tools defined in the YAML file and exit
+             --env-file <path>          .env file for ${VAR} interpolation and env vars (default: ./.env)
+             --no-reload                Disable hot-reload of tools YAML (env: YAML_AUTO_RELOAD)
+             --version                  Print version and exit
+             --transport <stdio|http>   Transport (default: stdio; env: MCP_TRANSPORT_TYPE)
+             --http-port <port>         HTTP port (default: 3010; env: MCP_HTTP_PORT)
+             --http-host <host>         HTTP bind host (default: 0.0.0.0; env: MCP_HTTP_HOST)
+             --http-endpoint <path>     HTTP MCP endpoint (default: /mcp; env: MCP_HTTP_ENDPOINT_PATH)
+        -h,  --help                     Show this help
       """;
 
   public static void main(String[] args) throws Exception {
@@ -61,6 +69,10 @@ public final class Main {
     String toolsPath = System.getenv("TOOLS_YAML_PATH");
     String toolsetsCsv = System.getenv("SELECTED_TOOLSETS");
     String envFile = ".env";
+    String transport = null;
+    String httpPort = null;
+    String httpHost = null;
+    String httpEndpoint = null;
     boolean listToolsets = false;
     boolean listTools = false;
     boolean noReload = false;
@@ -73,6 +85,10 @@ public final class Main {
         case "--list-toolsets" -> listToolsets = true;
         case "--list-tools" -> listTools = true;
         case "--no-reload" -> noReload = true;
+        case "--transport" -> transport = requireValue(args, ++i, "--transport");
+        case "--http-port" -> httpPort = requireValue(args, ++i, "--http-port");
+        case "--http-host" -> httpHost = requireValue(args, ++i, "--http-host");
+        case "--http-endpoint" -> httpEndpoint = requireValue(args, ++i, "--http-endpoint");
         case "--version" -> {
           System.out.println(McpServerRunner.SERVER_NAME + " " + McpServerRunner.SERVER_VERSION);
           return;
@@ -85,11 +101,32 @@ public final class Main {
       }
     }
 
+    Map<String, String> env = DotEnv.environment(Path.of(envFile));
+
+    transport = resolveConfigValue(transport, env, "MCP_TRANSPORT_TYPE", "stdio");
+    transport = transport.toLowerCase(Locale.ROOT);
+
+    boolean httpMode = "http".equals(transport);
+    TransportConfig transportConfig = null;
+    try {
+      if (httpMode) {
+        httpPort = resolveConfigValue(
+            httpPort, env, "MCP_HTTP_PORT", String.valueOf(TransportConfig.DEFAULT_PORT));
+        httpHost = resolveConfigValue(httpHost, env, "MCP_HTTP_HOST", TransportConfig.DEFAULT_HOST);
+        httpEndpoint = resolveConfigValue(
+            httpEndpoint, env, "MCP_HTTP_ENDPOINT_PATH", TransportConfig.DEFAULT_ENDPOINT);
+        transportConfig = resolveHttpTransportConfig(httpHost, httpPort, httpEndpoint);
+      } else {
+        validateTransportName(transport);
+      }
+    } catch (IllegalArgumentException e) {
+      fail(e.getMessage());
+      return;
+    }
+
     if (toolsPath == null || toolsPath.isBlank()) {
       fail("No tools YAML path given (use --tools or TOOLS_YAML_PATH)");
     }
-
-    Map<String, String> env = DotEnv.environment(Path.of(envFile));
     MergeOptions mergeOpts = MergeOptions.fromEnv(env);
     ToolsConfig config;
     try {
@@ -104,9 +141,9 @@ public final class Main {
       return;
     }
 
-    if (listTools) { 
-      printTools(config); 
-      return; 
+    if (listTools) {
+      printTools(config);
+      return;
     }
 
     Set<String> selected = new LinkedHashSet<>();
@@ -126,11 +163,15 @@ public final class Main {
       }
     });
 
-    InputStream stdin = new EofNotifyingInputStream(
-        System.in, () -> new Thread(shutdown, "stdin-eof").start());
     Runtime.getRuntime().addShutdownHook(new Thread(shutdown, "shutdown-cleanup"));
 
-    handleSlot[0] = McpServerRunner.start(config, selected, stdin, handleSlot);
+    if (httpMode) {
+      handleSlot[0] = McpServerRunner.startHttp(config, selected, transportConfig, handleSlot);
+    } else {
+      InputStream stdin = new EofNotifyingInputStream(
+          System.in, () -> new Thread(shutdown, "stdin-eof").start());
+      handleSlot[0] = McpServerRunner.start(config, selected, stdin, handleSlot);
+    }
 
     if (yamlAutoReload) {
       try {
@@ -140,7 +181,69 @@ public final class Main {
       }
     }
 
-    shutdownLatch.await();
+    if (httpMode) {
+      handleSlot[0].jettyServer().join();
+    } else {
+      shutdownLatch.await();
+    }
+  }
+
+  /**
+   * @throws IllegalArgumentException when transport is not {@code stdio} or {@code http}
+   */
+  static void validateTransportName(String transport) {
+    transport = transport.toLowerCase(Locale.ROOT);
+    if (!"stdio".equals(transport) && !"http".equals(transport)) {
+      throw new IllegalArgumentException(
+          "Invalid transport: " + transport + " (use stdio or http)");
+    }
+  }
+
+  /**
+   * Validates HTTP bind settings. CLI values should already be merged with env defaults.
+   *
+   * @throws IllegalArgumentException when HTTP settings are invalid
+   */
+  static TransportConfig resolveHttpTransportConfig(
+      String httpHost, String httpPort, String httpEndpoint) {
+    if (httpHost == null || httpHost.isBlank()) {
+      throw new IllegalArgumentException(
+          "No HTTP host given (use --http-host or MCP_HTTP_HOST)");
+    }
+    if (httpPort == null || httpPort.isBlank()) {
+      throw new IllegalArgumentException(
+          "No HTTP port given (use --http-port or MCP_HTTP_PORT)");
+    }
+    int port;
+    try {
+      port = Integer.parseInt(httpPort);
+    } catch (NumberFormatException e) {
+      throw new IllegalArgumentException("Invalid HTTP port: " + httpPort);
+    }
+    if (port < 1 || port > 65535) {
+      throw new IllegalArgumentException("Invalid HTTP port: " + port);
+    }
+    if (httpEndpoint == null || httpEndpoint.isBlank()) {
+      throw new IllegalArgumentException(
+          "No HTTP endpoint given (use --http-endpoint or MCP_HTTP_ENDPOINT_PATH)");
+    }
+    if (!httpEndpoint.startsWith("/")) {
+      throw new IllegalArgumentException("HTTP endpoint must start with /: " + httpEndpoint);
+    }
+    return new TransportConfig(httpHost, port, httpEndpoint);
+  }
+
+  private static String orDefault(String value, String fallback) {
+    return value != null && !value.isBlank() ? value : fallback;
+  }
+
+  /**
+   * CLI override, then merged environment ({@link DotEnv#environment} — process env
+   * wins over the {@code .env} file), then default.
+   */
+  static String resolveConfigValue(
+      String cliOverride, Map<String, String> env, String envKey, String defaultValue) {
+    return orDefault(cliOverride, orDefault(env.get(envKey), defaultValue));
   }
 
   private static void printToolsets(ToolsConfig config) {

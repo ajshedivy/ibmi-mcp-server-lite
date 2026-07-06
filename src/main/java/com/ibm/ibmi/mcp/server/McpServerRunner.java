@@ -30,17 +30,16 @@ import io.modelcontextprotocol.json.jackson2.JacksonMcpJsonMapper;
 import io.modelcontextprotocol.server.McpServer;
 import io.modelcontextprotocol.server.McpServerFeatures;
 import io.modelcontextprotocol.server.McpSyncServer;
+import io.modelcontextprotocol.server.transport.HttpServletStreamableServerTransportProvider;
 import io.modelcontextprotocol.server.transport.StdioServerTransportProvider;
 import io.modelcontextprotocol.spec.McpSchema.ServerCapabilities;
 import io.modelcontextprotocol.spec.McpSchema.Tool;
 import io.modelcontextprotocol.spec.McpSchema.ToolAnnotations;
 
+import org.eclipse.jetty.server.Server;
+
 /**
- * Builds the MCP server over stdio and registers every selected YAML tool.
- *
- * <p>TODO: Streamable HTTP transport
- * ({@code HttpServletStreamableServerTransportProvider} in mcp-core) behind a
- * {@code --transport http} flag, mirroring the reference server.
+ * Builds the MCP server and registers every selected YAML tool over stdio or Streamable HTTP.
  */
 public final class McpServerRunner {
 
@@ -61,6 +60,7 @@ public final class McpServerRunner {
     private volatile McpSyncServer server;
     private volatile ToolsYamlWatcher yamlWatcher;
     private volatile TestStdin testStdin;
+    private volatile Server jettyServer;
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
     ServerHandle(
@@ -82,6 +82,14 @@ public final class McpServerRunner {
 
     void attachTestStdin(TestStdin testStdin) {
       this.testStdin = testStdin;
+    }
+
+    void attachJetty(Server jetty) {
+      this.jettyServer = jetty;
+    }
+
+    public Server jettyServer() {
+      return jettyServer;
     }
 
     public McpSyncServer server() {
@@ -108,7 +116,14 @@ public final class McpServerRunner {
       if (yamlWatcher != null) {
         yamlWatcher.close();
       }
-      sources.close();
+      Server jetty = jettyServer;
+      if (jetty != null && jetty.isRunning()) {
+        try {
+          jetty.stop();
+        } catch (Exception e) {
+          log.warn("Jetty stop failed: {}", e.getMessage());
+        }
+      }
       TestStdin testStdin = this.testStdin;
       if (testStdin != null) {
         testStdin.close();
@@ -117,6 +132,7 @@ public final class McpServerRunner {
       if (active != null) {
         active.close();
       }
+      sources.close();
     }
   }
 
@@ -156,17 +172,11 @@ public final class McpServerRunner {
    * In-process stdio transport for unit tests (does not bind {@code System.in/out}).
    */
   static ServerHandle startForTests(ToolsConfig config, Set<String> selectedToolsets) {
+    Map<String, SqlToolConfig> selected = selectValidatedTools(config, selectedToolsets);
     ToolSpecContext toolSpecContext = ToolSpecContext.create();
     SourceManager sources = new SourceManager(config.sources());
     ConcurrentHashMap<String, SqlToolConfig> registeredTools = new ConcurrentHashMap<>();
     ServerHandle handle = new ServerHandle(sources, toolSpecContext, registeredTools);
-
-    Map<String, SqlToolConfig> selected = config.selectTools(selectedToolsets);
-    if (selected.isEmpty()) {
-      log.warn("No tools selected for registration (check --toolsets / YAML contents)");
-    }
-
-    validateSelectedTools(selected.values());
 
     TestStdin testStdin = new TestStdin();
     handle.attachTestStdin(testStdin);
@@ -176,12 +186,53 @@ public final class McpServerRunner {
         .capabilities(ServerCapabilities.builder().tools(true).logging().build())
         .build();
     handle.attachServer(server);
+    registerTools(server, config, selected, sources, toolSpecContext, registeredTools);
 
-    for (SqlToolConfig toolConfig : selected.values()) {
-      server.addTool(buildSpec(toolConfig, sources, toolSpecContext));
-      registeredTools.put(toolConfig.name(), toolConfig);
-    }
+    return handle;
+  }
 
+  /**
+   * Starts the server with Streamable HTTP (embedded Jetty + servlet transport).
+   * Used by {@link com.ibm.ibmi.mcp.Main} when {@code --transport http}.
+   */
+  public static ServerHandle startHttp(
+      ToolsConfig config,
+      Set<String> selectedToolsets,
+      TransportConfig transport,
+      ServerHandle[] handleSlot) throws Exception {
+    Map<String, SqlToolConfig> selected = selectValidatedTools(config, selectedToolsets);
+
+    ToolSpecContext toolSpecContext = ToolSpecContext.create();
+    SourceManager sources = new SourceManager(config.sources());
+    ConcurrentHashMap<String, SqlToolConfig> registeredTools = new ConcurrentHashMap<>();
+    ServerHandle handle = new ServerHandle(sources, toolSpecContext, registeredTools);
+    handleSlot[0] = handle;
+
+    var transportProvider = HttpServletStreamableServerTransportProvider.builder()
+        .jsonMapper(toolSpecContext.jsonMapper())
+        .mcpEndpoint(transport.httpEndpoint())
+        .build();
+
+    McpSyncServer server = McpServer.sync(transportProvider)
+        .serverInfo(SERVER_NAME, SERVER_VERSION)
+        .capabilities(ServerCapabilities.builder().tools(true).logging().build())
+        .build();
+    handle.attachServer(server);
+
+    int toolCount = registerTools(
+        server, config, selected, sources, toolSpecContext, registeredTools);
+
+    Server jetty = HttpTransport.start(
+        transportProvider,
+        transport.httpHost(),
+        transport.httpPort(),
+        transport.httpEndpoint());
+    handle.attachJetty(jetty);
+
+    int boundPort = HttpTransport.localPort(jetty);
+    log.info("HTTP transport listening at http://{}:{}{}",
+        transport.httpHost(), boundPort, transport.httpEndpoint());
+    log.info("{} v{} ready on http with {} tools", SERVER_NAME, SERVER_VERSION, toolCount);
     return handle;
   }
 
@@ -191,20 +242,14 @@ public final class McpServerRunner {
       InputStream stdin,
       ServerHandle[] handleSlot,
       OutputStream stdout) {
+    Map<String, SqlToolConfig> selected = selectValidatedTools(config, selectedToolsets);
+
     ToolSpecContext toolSpecContext = ToolSpecContext.create();
     SourceManager sources = new SourceManager(config.sources());
     ConcurrentHashMap<String, SqlToolConfig> registeredTools = new ConcurrentHashMap<>();
     ServerHandle handle = new ServerHandle(sources, toolSpecContext, registeredTools);
     handleSlot[0] = handle;
 
-    Map<String, SqlToolConfig> selected = config.selectTools(selectedToolsets);
-    if (selected.isEmpty()) {
-      log.warn("No tools selected for registration (check --toolsets / YAML contents)");
-    }
-
-    validateSelectedTools(selected.values());
-
-    // stdin EOF is detected by EofNotifyingInputStream in Main; transport remains the sole reader.
     McpSyncServer server = McpServer.sync(
             new StdioServerTransportProvider(toolSpecContext.jsonMapper(), stdin, stdout))
         .serverInfo(SERVER_NAME, SERVER_VERSION)
@@ -212,19 +257,44 @@ public final class McpServerRunner {
         .build();
     handle.attachServer(server);
 
+    int toolCount = registerTools(
+        server, config, selected, sources, toolSpecContext, registeredTools);
+
+    log.info("{} v{} ready on stdio with {} tools", SERVER_NAME, SERVER_VERSION, toolCount);
+    return handle;
+  }
+
+  static Map<String, SqlToolConfig> selectValidatedTools(
+      ToolsConfig config, Set<String> selectedToolsets) {
+    Map<String, SqlToolConfig> selected = config.selectTools(selectedToolsets);
+    if (selected.isEmpty()) {
+      log.warn("No tools selected for registration (check --toolsets / YAML contents)");
+    }
+    validateSelectedTools(selected.values());
+    return selected;
+  }
+
+  static int registerTools(
+      McpSyncServer server,
+      ToolsConfig config,
+      Map<String, SqlToolConfig> selected,
+      SourceManager sources,
+      ToolSpecContext toolSpecContext,
+      ConcurrentHashMap<String, SqlToolConfig> registeredTools) {
     for (SqlToolConfig toolConfig : selected.values()) {
       server.addTool(buildSpec(toolConfig, sources, toolSpecContext));
       registeredTools.put(toolConfig.name(), toolConfig);
       log.info("Registered tool '{}' (source: {}, toolsets: {})",
           toolConfig.name(), toolConfig.source(), config.toolsetsForTool(toolConfig.name()));
     }
-
-    log.info("{} v{} ready on stdio with {} tools", SERVER_NAME, SERVER_VERSION, selected.size());
-    return handle;
+    return selected.size();
   }
 
   /**
    * Watches resolved tools YAML files and hot-reloads the registry when any changes.
+   *
+   * <p>Under Streamable HTTP with multiple concurrent clients, reload is best-effort:
+   * in-flight requests may observe the previous or updated tool set.
    */
   public static void attachYamlWatcher(
       ServerHandle handle,

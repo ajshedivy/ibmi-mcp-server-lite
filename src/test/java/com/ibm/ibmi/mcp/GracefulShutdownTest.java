@@ -44,12 +44,17 @@ class GracefulShutdownTest {
   void stdinEofExitsProcess(@TempDir Path tempDir) throws IOException, InterruptedException {
     Path yaml = tempDir.resolve("tools.yaml");
     Files.writeString(yaml, MINIMAL_TOOLS_YAML);
+    // Isolate from the repo's ./.env (e.g. MCP_TRANSPORT_TYPE=http) and process env.
+    Path envFile = tempDir.resolve("test.env");
+    Files.writeString(envFile, "");
 
     String java = Path.of(System.getProperty("java.home"), "bin", "java").toString();
     ProcessBuilder pb = new ProcessBuilder(
         java, "-cp", System.getProperty("java.class.path"),
         Main.class.getName(),
-        "--tools", yaml.toAbsolutePath().toString());
+        "--tools", yaml.toAbsolutePath().toString(),
+        "--env-file", envFile.toAbsolutePath().toString(),
+        "--transport", "stdio");
     pb.redirectErrorStream(true);
     Process proc = pb.start();
 
