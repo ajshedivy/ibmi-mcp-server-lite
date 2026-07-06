@@ -16,7 +16,7 @@ JAR = sys.argv[1] if len(sys.argv) > 1 else "target/ibmi-mcp-server-lite-0.1.0.j
 TOOLS = sys.argv[2] if len(sys.argv) > 2 else "tools/sample-tools.yaml"
 
 proc = subprocess.Popen(
-    ["java", "-jar", JAR, "--tools", TOOLS],
+    ["java", "-jar", JAR, "--tools", TOOLS, "--transport", "stdio", "--no-reload"],
     stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
 # surface server logs (stderr) without blocking

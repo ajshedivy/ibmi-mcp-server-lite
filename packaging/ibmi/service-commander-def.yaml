@@ -5,7 +5,7 @@
 # check_alive probes the default HTTP port (3010).
 name: IBM i MCP Server Lite
 dir: .
-start_cmd: /QOpenSys/pkgs/bin/ibmi-mcp-server-lite --transport http
+start_cmd: /QOpenSys/pkgs/bin/ibmi-mcp-server-lite --transport http --no-reload
 check_alive: '3010'
 batch_mode: 'true'
 sbmjob_opts: 'JOBQ(QUSRNOMAX)'
