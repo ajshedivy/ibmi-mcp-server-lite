@@ -93,6 +93,18 @@ class SqlSecurityValidatorTest {
   }
 
   @Test
+  void clLabelPrefixSelectPasses() {
+    assertDoesNotThrow(() -> SqlSecurityValidator.validate(
+        "MYLABEL: SELECT 1 FROM SYSIBM.SYSDUMMY1", SecurityConfig.DEFAULTS));
+  }
+
+  @Test
+  void execSqlPrefixSelectPasses() {
+    assertDoesNotThrow(() -> SqlSecurityValidator.validate(
+        "EXEC SQL SELECT 1 FROM SYSIBM.SYSDUMMY1", SecurityConfig.DEFAULTS));
+  }
+
+  @Test
   void escapedQuoteStringContainingDropPasses() {
     assertDoesNotThrow(() -> SqlSecurityValidator.validate(
         "SELECT 'can''t DROP'", SecurityConfig.DEFAULTS));

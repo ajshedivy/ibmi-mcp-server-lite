@@ -170,9 +170,28 @@ public final class SqlTokenizer {
     return statements;
   }
 
-  /** Classify a statement segment by its first leading {@link TokenType#WORD} token. */
+  /**
+   * Classify a statement segment by its leading statement-type keyword, skipping an
+   * optional {@code EXEC SQL} prefix or {@code label:} prefix (vscode-db2i {@code Statement}
+   * constructor behavior).
+   */
   public static StatementType classifyStatement(List<Token> tokens) {
-    for (Token token : tokens) {
+    int start = 0;
+    if (tokens.size() >= 2
+        && tokens.get(0).type() == TokenType.WORD
+        && "EXEC".equals(tokens.get(0).value())
+        && tokens.get(1).type() == TokenType.WORD
+        && "SQL".equals(tokens.get(1).value())) {
+      start = 2;
+    } else if (tokens.size() >= 2
+        && tokens.get(0).type() == TokenType.WORD
+        && tokens.get(1).type() == TokenType.PUNCT
+        && ":".equals(tokens.get(1).value())) {
+      start = 2;
+    }
+
+    for (int i = start; i < tokens.size(); i++) {
+      Token token = tokens.get(i);
       if (token.type() == TokenType.WORD) {
         return StatementType.fromWord(token.value());
       }
