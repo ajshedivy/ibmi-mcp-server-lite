@@ -65,34 +65,37 @@ public final class SqlSecurityValidator {
           "Query exceeds maximum length of " + maxLength + " characters");
     }
 
-    if (effective.forbiddenKeywords() != null) {
-      validateForbiddenKeywords(sql, effective.forbiddenKeywords());
-    }
-
+    List<String> forbiddenKeywords = effective.forbiddenKeywords();
     boolean readOnly = effective.readOnly() == null || effective.readOnly();
-    if (readOnly) {
-      validateReadOnly(sql);
-    }
-  }
-
-  private static void validateForbiddenKeywords(String sql, List<String> forbiddenKeywords) {
-    try {
-      validateForbiddenKeywordsToken(sql, forbiddenKeywords);
-    } catch (SqlTokenizerException e) {
-      LOG.warn("SQL tokenization failed for forbidden-keyword check, using regex fallback: {}",
-          e.getMessage());
-      validateForbiddenKeywordsFallback(sql, forbiddenKeywords);
+    if (forbiddenKeywords != null || readOnly) {
+      try {
+        List<Token> tokens = SqlTokenizer.tokenize(sql);
+        if (forbiddenKeywords != null) {
+          validateForbiddenKeywordsToken(tokens, forbiddenKeywords);
+        }
+        if (readOnly) {
+          validateReadOnlyToken(tokens);
+        }
+      } catch (SqlTokenizerException e) {
+        LOG.warn("SQL tokenization failed, using regex fallback: {}", e.getMessage());
+        if (forbiddenKeywords != null) {
+          validateForbiddenKeywordsFallback(sql, forbiddenKeywords);
+        }
+        if (readOnly) {
+          validateReadOnlyFallback(sql);
+        }
+      }
     }
   }
 
   private static void validateForbiddenKeywordsToken(
-      String sql, List<String> forbiddenKeywords) {
+      List<Token> tokens, List<String> forbiddenKeywords) {
     Set<String> forbidden = new HashSet<>();
     for (String keyword : forbiddenKeywords) {
       forbidden.add(keyword.toUpperCase(Locale.ROOT));
     }
 
-    for (Token token : SqlTokenizer.tokenize(sql)) {
+    for (Token token : tokens) {
       if (isSkippedForKeywordScan(token.type())) {
         continue;
       }
@@ -112,21 +115,10 @@ public final class SqlSecurityValidator {
     }
   }
 
-  private static void validateReadOnly(String sql) {
-    try {
-      validateReadOnlyToken(sql);
-    } catch (SqlTokenizerException e) {
-      LOG.warn("SQL tokenization failed for read-only check, using regex fallback: {}",
-          e.getMessage());
-      validateReadOnlyFallback(sql);
-    }
-  }
-
-  private static void validateReadOnlyToken(String sql) {
+  private static void validateReadOnlyToken(List<Token> tokens) {
     // Top-level statement type only (leading keyword per segment): nested DML inside a
     // WITH/SELECT (e.g. "WITH t AS (DELETE FROM x) SELECT * FROM t") is not checked here
     // but fails at Db2 execution — same as the reference server's parser path.
-    List<Token> tokens = SqlTokenizer.tokenize(sql);
     List<List<Token>> statements = SqlTokenizer.splitStatements(tokens);
 
     if (statements.isEmpty()) {
