@@ -85,9 +85,11 @@ Tool results mirror the reference server's `StandardSqlToolOutput` shape
 - **mapepire-java verifies TLS hostnames even with `ignore-unauthorized: true`** (only
   cert-chain trust is skipped). `DB2i_HOST` must match a SAN in the Mapepire server
   certificate or connections fail.
-- **`.github/workflows/rpm-ibmi.yml` is a deliberately inert skeleton**, guarded by the
-  `ENABLE_IBMI_RPM_BUILD` repo variable. Do not "fix" it to run; the spec and Makefile
-  under `packaging/` are templates with TODO markers.
+- **`.github/workflows/rpm-ibmi.yml` is a complete but gated RPM pipeline**, guarded by the
+  `ENABLE_IBMI_RPM_BUILD` repo variable (off by default). It builds a real `yum`-installable
+  RPM on an IBM i partition using IBM Technology for Java 17 (5770-JV1 option 20); the spec,
+  `Makefile`, and PASE launcher under `packaging/` are working artifacts. See
+  `docs/running-on-ibmi.md` for build-partition prerequisites and the required secrets.
 
 ## Conventions
 

@@ -121,7 +121,7 @@ One pipeline, one package per stage under `src/main/java/com/ibm/ibmi/mcp/`:
 Supporting material: [`ROADMAP.md`](ROADMAP.md) (milestones + linked issues), `tools/`
 (sample YAML), `scripts/` (smoke test), `docs/` (YAML reference, IBM i deployment, and
 `docs/research/` notes on the reference semantics), `packaging/` + `Makefile` (the IBM i
-RPM skeleton).
+RPM packaging).
 
 [AGENTS.md](AGENTS.md) (symlinked as `CLAUDE.md`) is the condensed architecture and
 constraints reference for AI coding agents — it's a good quick map of the codebase for

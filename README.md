@@ -233,7 +233,7 @@ process env wins). Enabled when unset, or when the value is `true` or `1`.
 | `com.ibm.ibmi.mcp.sql` | `:name` → parameterized-query binding; basic SQL security validation |
 | `com.ibm.ibmi.mcp.mapepire` | One lazy Mapepire `Pool` per source (`SourceManager`) |
 | `com.ibm.ibmi.mcp.server` | MCP server construction, tool registration, hot-reload watcher, call handling |
-| `packaging/`, `Makefile` | IBM i RPM skeleton (spec, PASE launcher, Service Commander unit) |
+| `packaging/`, `Makefile` | IBM i RPM packaging (spec, PASE launcher, Service Commander unit) |
 
 Tool results mirror the reference server's `StandardSqlToolOutput` shape, returned as a
 JSON text block and as MCP `structuredContent`:
@@ -257,10 +257,10 @@ JSON text block and as MCP `structuredContent`:
 ## Running on IBM i
 
 The fat jar is the deployment unit. See [docs/running-on-ibmi.md](docs/running-on-ibmi.md)
-for deployment steps, the PASE launcher, the RPM build skeleton
-(`.github/workflows/rpm-ibmi.yml`, `packaging/rpm/*.spec`), and the current **Java 17
-runtime gap on IBM i** — the one open blocker for running the server on the system itself
-(running it anywhere else against an IBM i works today, as the smoke test demonstrates).
+for deployment steps, the PASE launcher, the RPM build pipeline
+(`.github/workflows/rpm-ibmi.yml`, `packaging/rpm/*.spec`), and the supported **Java 17
+runtime on IBM i** — IBM Technology for Java 17 (5770-JV1 option 20). Running the server
+anywhere else against an IBM i also works today, as the smoke test demonstrates.
 
 ## What's deliberately missing
 
