@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayInputStream;
@@ -28,11 +29,11 @@ import org.junit.jupiter.api.io.TempDir;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ibm.ibmi.mcp.config.MergeOptions;
+import com.ibm.ibmi.mcp.config.ToolsConfig;
 import com.ibm.ibmi.mcp.config.ParameterConfig;
 import com.ibm.ibmi.mcp.config.SecurityConfig;
 import com.ibm.ibmi.mcp.config.SourceConfig;
 import com.ibm.ibmi.mcp.config.SqlToolConfig;
-import com.ibm.ibmi.mcp.config.ToolsConfig;
 import com.ibm.ibmi.mcp.config.YamlConfigLoader;
 import com.ibm.ibmi.mcp.mapepire.SourceManager;
 import com.ibm.ibmi.mcp.util.ShutdownGuard;
@@ -209,6 +210,48 @@ class McpServerRunnerTest {
   void validateSelectedTools_acceptsExecuteSqlPlaceholderStatement() {
     SqlToolConfig executeSql = BuiltinTools.executeSql("ibmi-system", true);
     assertDoesNotThrow(() -> McpServerRunner.validateSelectedTools(List.of(executeSql)));
+  }
+
+  @Test
+  void resolveExecuteSqlSource_picksFirstSourceInMergeOrder(@TempDir Path tempDir) throws Exception {
+    Path yaml = tempDir.resolve("tools.yaml");
+    Files.writeString(yaml, """
+        sources:
+          alpha:
+            host: localhost
+            user: user
+            password: pass
+          beta:
+            host: localhost
+            user: user
+            password: pass
+        tools:
+          tool_a:
+            source: alpha
+            description: "a"
+            statement: SELECT 1 FROM SYSIBM.SYSDUMMY1
+        """);
+    ToolsConfig config = new YamlConfigLoader(Map.of()).load(yaml);
+    // First key in YAML merge insertion order is the deterministic default.
+    assertEquals("alpha", McpServerRunner.resolveExecuteSqlSource(config));
+  }
+
+  @Test
+  void resolveExecuteSqlSource_throwsWhenNoSources() {
+    ToolsConfig config = new ToolsConfig(Map.of(), Map.of(), Map.of());
+    IllegalArgumentException e = assertThrows(
+        IllegalArgumentException.class,
+        () -> McpServerRunner.resolveExecuteSqlSource(config));
+    assertTrue(e.getMessage().contains("No sources defined"));
+  }
+
+  @Test
+  void executeSqlStartupFailsWhenNoSources() {
+    ToolsConfig config = new ToolsConfig(Map.of(), Map.of(), Map.of());
+    IllegalArgumentException e = assertThrows(
+        IllegalArgumentException.class,
+        () -> McpServerRunner.startForTests(config, Set.of(), true, true));
+    assertTrue(e.getMessage().contains("No sources defined"));
   }
 
   @Test

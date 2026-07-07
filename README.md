@@ -156,6 +156,9 @@ re-validates the substituted statement at call time (read-only by default: only
 `SELECT`/`WITH` pass). If multiple sources are defined, the first source key in YAML
 merge order is used.
 
+Do not define a YAML tool named `execute_sql`. When the built-in is enabled, it is
+registered programmatically and takes precedence over any same-named YAML entry.
+
 - **Hot-reload** (default on): when any resolved tools YAML file changes on disk, the server
   re-merges and updates the live tool registry without restarting. See
   [Hot-reloading tools YAML](#hot-reloading-tools-yaml) below.

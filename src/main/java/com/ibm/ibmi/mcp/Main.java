@@ -159,8 +159,6 @@ public final class Main {
     boolean enableExecuteSql = resolveExecuteSql(env, executeSql);
     boolean executeSqlReadonly = resolveExecuteSqlReadonly(env);
 
-
-
     CountDownLatch shutdownLatch = new CountDownLatch(1);
     AtomicBoolean shuttingDown = new AtomicBoolean(false);
     McpServerRunner.ServerHandle[] handleSlot = new McpServerRunner.ServerHandle[1];
