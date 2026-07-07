@@ -125,6 +125,15 @@ default binds as an empty string when omitted.
 - A placeholder with no matching parameter definition is left verbatim and will fail at
   the database — declare every placeholder.
 
+**Direct substitution** (special case used by the built-in `execute_sql` tool): when a
+tool has exactly one parameter and the normalized statement is exactly `:<paramName>`
+(leading line comments and string literals stripped before comparison), the string
+argument value becomes the entire SQL text with no bind parameters. For example,
+`-- note\n:sql` with a single `sql` parameter qualifies. Load-time read-only validation
+is skipped for qualifying tools (the placeholder is validated after substitution at call
+time). YAML tools using this pattern must declare parameter constraints (`minLength`,
+`maxLength`, `pattern`, `enum`) — they are enforced at call time like any other tool.
+
 ### `security`
 
 ```yaml

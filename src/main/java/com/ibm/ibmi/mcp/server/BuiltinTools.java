@@ -12,10 +12,15 @@ public final class BuiltinTools {
 
   public static final String EXECUTE_SQL_NAME = "execute_sql";
 
-  private static final String EXECUTE_SQL_DESCRIPTION =
-      "Executes a SELECT query on the IBM i database and returns the results.";
-
   private BuiltinTools() {}
+
+  private static String executeSqlDescription(boolean readOnly) {
+    if (readOnly) {
+      return "Executes a SELECT query on the IBM i database and returns the results. "
+          + "(Read-only: SELECT/WITH only.)";
+    }
+    return "Executes a SQL query on the IBM i database and returns the results.";
+  }
 
   /**
    * Built-in ad-hoc SQL tool. The statement {@code :sql} uses direct substitution at call time;
@@ -26,7 +31,7 @@ public final class BuiltinTools {
         EXECUTE_SQL_NAME,
         true,
         sourceName,
-        EXECUTE_SQL_DESCRIPTION,
+        executeSqlDescription(readOnly),
         ":sql",
         List.of(new ParameterConfig(
             "sql",

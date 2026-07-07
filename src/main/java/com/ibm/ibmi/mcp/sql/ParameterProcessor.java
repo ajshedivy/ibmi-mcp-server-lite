@@ -30,9 +30,10 @@ import com.ibm.ibmi.mcp.config.SqlToolConfig;
  *
  * <p><b>Key behaviors:</b>
  * <ul>
- *   <li>Direct substitution: when a tool has exactly one parameter and the trimmed
- *       statement is {@code :<thatParamName>}, the (string) argument value becomes the
- *       entire SQL text with an empty binding list ({@code execute_sql}).
+ *   <li>Direct substitution: when a tool has exactly one parameter and the normalized
+ *       statement is {@code :<thatParamName>} (leading line comments stripped), the
+ *       (string) argument value becomes the entire SQL text with an empty binding list
+ *       ({@code execute_sql}).
  *   <li>Missing argument: use {@code default} if present; error if required; otherwise
  *       bind an empty string (reference behavior).
  *   <li>{@code boolean} values bind as {@code 1}/{@code 0} for Db2.
@@ -51,6 +52,8 @@ import com.ibm.ibmi.mcp.config.SqlToolConfig;
 public final class ParameterProcessor {
 
   private static final Pattern NAMED_PARAM = Pattern.compile(":(\\w+)");
+  private static final Pattern STRING_LITERAL = Pattern.compile("'(?:''|[^'])*'");
+  private static final Pattern LINE_COMMENT = Pattern.compile("--[^\\n]*");
 
   private ParameterProcessor() {}
 
@@ -104,7 +107,13 @@ public final class ParameterProcessor {
 
   public static boolean isDirectSubstitution(SqlToolConfig tool) {
     return tool.parameters().size() == 1
-        && tool.statement().trim().equals(":" + tool.parameters().get(0).name());
+        && normalizeStatementForDirectSubstitution(tool.statement())
+            .equals(":" + tool.parameters().get(0).name());
+  }
+
+  static String normalizeStatementForDirectSubstitution(String statement) {
+    return LINE_COMMENT.matcher(STRING_LITERAL.matcher(statement).replaceAll("''"))
+        .replaceAll("").trim();
   }
 
   /** Applies defaults, required checks, and type coercion for each declared parameter. */

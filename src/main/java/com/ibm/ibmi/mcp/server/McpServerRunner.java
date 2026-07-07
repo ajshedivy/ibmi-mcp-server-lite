@@ -23,6 +23,7 @@ import com.ibm.ibmi.mcp.config.ToolsConfig;
 import com.ibm.ibmi.mcp.config.YamlConfigLoader;
 import com.ibm.ibmi.mcp.mapepire.SourceManager;
 import com.ibm.ibmi.mcp.schema.JsonSchemaBuilder;
+import com.ibm.ibmi.mcp.sql.ParameterProcessor;
 import com.ibm.ibmi.mcp.sql.SqlSecurityValidator;
 
 import io.modelcontextprotocol.json.McpJsonMapper;
@@ -395,7 +396,9 @@ public final class McpServerRunner {
    */
   static void validateSelectedTools(Iterable<SqlToolConfig> tools) {
     for (SqlToolConfig tool : tools) {
-      SqlSecurityValidator.validate(tool.statement(), tool.security());
+      if (!ParameterProcessor.isDirectSubstitution(tool)) {
+        SqlSecurityValidator.validate(tool.statement(), tool.security());
+      }
     }
   }
 
