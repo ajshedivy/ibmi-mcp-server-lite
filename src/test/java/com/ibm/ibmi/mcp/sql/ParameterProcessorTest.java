@@ -156,6 +156,26 @@ class ParameterProcessorTest {
   }
 
   @Test
+  void directSubstitutionRejectsInputExceedingMaxLength() {
+    IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+        () -> ParameterProcessor.prepare(
+            tool(":sql", paramWithLength("sql", "string", null, true, 1, 10)),
+            Map.of("sql", "x".repeat(11))));
+    assertTrue(e.getMessage().contains("sql"));
+    assertTrue(e.getMessage().contains("at most 10 characters"));
+  }
+
+  @Test
+  void directSubstitutionRecognizesCommentPrefixedStatement() {
+    String query = "SELECT 1 FROM SYSIBM.SYSDUMMY1";
+    BoundStatement bound = ParameterProcessor.prepare(
+        tool("-- note\n:sql", param("sql", "string", null, true)),
+        Map.of("sql", query));
+    assertEquals(query, bound.sql());
+    assertTrue(bound.parameters().isEmpty());
+  }
+
+  @Test
   void singleParameterWithFullStatementUsesPositionalBinding() {
     BoundStatement bound = ParameterProcessor.prepare(
         tool("SELECT * FROM T WHERE id = :id", param("id", "string", null, true)),

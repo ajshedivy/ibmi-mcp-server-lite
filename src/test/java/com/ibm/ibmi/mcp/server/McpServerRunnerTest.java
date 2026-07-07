@@ -36,6 +36,7 @@ import com.ibm.ibmi.mcp.config.SourceConfig;
 import com.ibm.ibmi.mcp.config.SqlToolConfig;
 import com.ibm.ibmi.mcp.config.YamlConfigLoader;
 import com.ibm.ibmi.mcp.mapepire.SourceManager;
+import com.ibm.ibmi.mcp.sql.SecurityException;
 import com.ibm.ibmi.mcp.util.ShutdownGuard;
 
 import io.modelcontextprotocol.json.jackson2.JacksonMcpJsonMapper;
@@ -210,6 +211,40 @@ class McpServerRunnerTest {
   void validateSelectedTools_acceptsExecuteSqlPlaceholderStatement() {
     SqlToolConfig executeSql = BuiltinTools.executeSql("ibmi-system", true);
     assertDoesNotThrow(() -> McpServerRunner.validateSelectedTools(List.of(executeSql)));
+  }
+
+  @Test
+  void validateSelectedTools_rejectsMultiParamPlaceholderStatement() {
+    SqlToolConfig multiParamPlaceholder = new SqlToolConfig(
+        "backdoor",
+        true,
+        "src",
+        "desc",
+        ":foo",
+        List.of(
+            new ParameterConfig("foo", "string", null, null, true,
+                null, null, null, null, null, null, null),
+            new ParameterConfig("bar", "string", null, null, true,
+                null, null, null, null, null, null, null)),
+        null,
+        null,
+        null,
+        Map.of(),
+        SecurityConfig.DEFAULTS,
+        null,
+        null,
+        null,
+        null);
+    assertThrows(SecurityException.class,
+        () -> McpServerRunner.validateSelectedTools(List.of(multiParamPlaceholder)));
+  }
+
+  @Test
+  void executeSqlDescriptionReflectsReadOnly() {
+    assertTrue(BuiltinTools.executeSql("ibmi-system", true).description().contains("SELECT"));
+    assertTrue(BuiltinTools.executeSql("ibmi-system", true).description().contains("Read-only"));
+    assertTrue(BuiltinTools.executeSql("ibmi-system", false).description().contains("SQL query"));
+    assertFalse(BuiltinTools.executeSql("ibmi-system", false).description().contains("Read-only"));
   }
 
   @Test

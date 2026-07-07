@@ -146,8 +146,8 @@ class SqlSecurityValidatorTest {
   }
 
   @Test
-  void directSubstitutionPlaceholderPassesAtLoadTime() {
-    SecurityConfig readOnly = new SecurityConfig(true, 10_000, null);
-    assertDoesNotThrow(() -> SqlSecurityValidator.validate(":sql", readOnly));
+  void barePlaceholderSqlIsValidatedWhenCalledDirectly() {
+    assertThrows(SecurityException.class, () -> SqlSecurityValidator.validate(
+        ":sql", SecurityConfig.DEFAULTS));
   }
 }
