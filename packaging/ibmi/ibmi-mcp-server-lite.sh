@@ -5,9 +5,10 @@
 # required for well-behaved stdin/stdout on IBM i (same set mapepire uses) —
 # essential here because MCP stdio framing runs over stdin/stdout.
 #
-# TODO: point JAVA at a Java 17 runtime once one is available on the
-# system (see docs/running-on-ibmi.md).
-JAVA=${JAVA:-/QOpenSys/pkgs/lib/jvm/openjdk-11/bin/java}
+# Uses IBM Technology for Java 17 (Semeru Certified Edition, 5770-JV1 option 20),
+# the supported Java 17 runtime on IBM i (see docs/running-on-ibmi.md). Override
+# JAVA to point at a different Java 17+ install if needed.
+JAVA=${JAVA:-/QOpenSys/QIBM/ProdData/JavaVM/jdk17/64bit/bin/java}
 
 QIBM_JAVA_STDIO_CONVERT=N \
 QIBM_PASE_DESCRIPTOR_STDIO=B \
