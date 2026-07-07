@@ -31,6 +31,10 @@ jobs:
     # Guard: pipeline stays inert until the IBM i build partition is configured.
     if: ${{ vars.ENABLE_IBMI_RPM_BUILD == 'true' }}
     runs-on: ubuntu-latest
+    # softprops/action-gh-release needs contents:write to attach the RPM to the
+    # release; GITHUB_TOKEN defaults to read-only, so declare it explicitly.
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
