@@ -34,7 +34,7 @@ public final class BuiltinTools {
             "The SQL query to execute on the IBM i database",
             null,
             true,
-            null, null, null, null, null, null, null)),
+            null, null, null, 1, 10_000, null, null)),
         null,
         null,
         null,

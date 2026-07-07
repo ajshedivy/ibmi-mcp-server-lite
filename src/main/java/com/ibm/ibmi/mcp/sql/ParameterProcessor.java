@@ -69,7 +69,9 @@ public final class ParameterProcessor {
         throw new IllegalArgumentException(
             "Missing or invalid SQL parameter '" + paramName + "' for direct substitution");
       }
-      return new BoundStatement((String) raw, List.of());
+      String sql = (String) raw;
+      ParameterValidator.validate(tool.parameters().get(0), sql);
+      return new BoundStatement(sql, List.of());
     }
 
     Map<String, Object> values = resolveValues(tool, args);
@@ -100,7 +102,7 @@ public final class ParameterProcessor {
     return new BoundStatement(sql.toString(), bindings);
   }
 
-  private static boolean isDirectSubstitution(SqlToolConfig tool) {
+  public static boolean isDirectSubstitution(SqlToolConfig tool) {
     return tool.parameters().size() == 1
         && tool.statement().trim().equals(":" + tool.parameters().get(0).name());
   }
