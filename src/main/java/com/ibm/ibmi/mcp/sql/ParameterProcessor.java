@@ -13,11 +13,12 @@ import com.ibm.ibmi.mcp.config.SqlToolConfig;
 /**
  * Validates/coerces incoming tool arguments against the tool's parameter definitions and
  * converts the {@code :name} placeholders in the YAML statement into a Mapepire
- * parameterized query ({@code ?} markers + ordered values). No values are ever spliced
- * into the SQL text — binding is always parameterized, mirroring the reference server.
+ * parameterized query ({@code ?} markers + ordered values). Values are not spliced into
+ * SQL text except for the direct-substitution special case used by {@code execute_sql}.
  *
  * <p><b>Processing order:</b>
  * <ol>
+ *   <li>Direct substitution when the statement is exactly {@code :param} (one parameter)
  *   <li>Apply defaults for missing arguments
  *   <li>Check required parameters
  *   <li>Coerce to declared type (string, integer, float, boolean, array)
@@ -29,6 +30,10 @@ import com.ibm.ibmi.mcp.config.SqlToolConfig;
  *
  * <p><b>Key behaviors:</b>
  * <ul>
+ *   <li>Direct substitution: when a tool has exactly one parameter and the normalized
+ *       statement is {@code :<thatParamName>} (leading line comments stripped), the
+ *       (string) argument value becomes the entire SQL text with an empty binding list
+ *       ({@code execute_sql}).
  *   <li>Missing argument: use {@code default} if present; error if required; otherwise
  *       bind an empty string (reference behavior).
  *   <li>{@code boolean} values bind as {@code 1}/{@code 0} for Db2.
@@ -41,28 +46,43 @@ import com.ibm.ibmi.mcp.config.SqlToolConfig;
  *       are enforced before SQL execution.
  * </ul>
  *
- * <p>TODO: the reference server also supports purely positional ({@code ?}) and
- * hybrid statements, plus a "direct substitution" mode where a statement consisting of
- * exactly {@code :param} executes the parameter value as the SQL text (used by
- * {@code execute_sql}). Those modes are not implemented here.
+ * <p>TODO: the reference server also supports purely positional ({@code ?}) and hybrid
+ * statements; those modes are not implemented here.
  */
 public final class ParameterProcessor {
 
   private static final Pattern NAMED_PARAM = Pattern.compile(":(\\w+)");
+  private static final Pattern STRING_LITERAL = Pattern.compile("'(?:''|[^'])*'");
+  private static final Pattern LINE_COMMENT = Pattern.compile("--[^\\n]*");
 
   private ParameterProcessor() {}
 
   public static BoundStatement prepare(SqlToolConfig tool, Map<String, Object> arguments) {
-    Map<String, Object> values = resolveValues(tool, arguments == null ? Map.of() : arguments);
+    Map<String, Object> args = arguments == null ? Map.of() : arguments;
 
     if (tool.parameters().isEmpty()) {
       // No declared parameters: statement runs as-is (reference behavior).
       return new BoundStatement(tool.statement(), List.of());
     }
 
+    if (isDirectSubstitution(tool)) {
+      String paramName = tool.parameters().get(0).name();
+      Object raw = args.get(paramName);
+      if (raw == null || !(raw instanceof String)) {
+        throw new IllegalArgumentException(
+            "Missing or invalid SQL parameter '" + paramName + "' for direct substitution");
+      }
+      String sql = (String) raw;
+      ParameterValidator.validate(tool.parameters().get(0), sql);
+      return new BoundStatement(sql, List.of());
+    }
+
+    Map<String, Object> values = resolveValues(tool, args);
+
     List<Object> bindings = new ArrayList<>();
     Matcher m = NAMED_PARAM.matcher(tool.statement());
     StringBuilder sql = new StringBuilder();
+
     while (m.find()) {
       String name = m.group(1);
       if (!values.containsKey(name)) {
@@ -83,6 +103,17 @@ public final class ParameterProcessor {
     }
     m.appendTail(sql);
     return new BoundStatement(sql.toString(), bindings);
+  }
+
+  public static boolean isDirectSubstitution(SqlToolConfig tool) {
+    return tool.parameters().size() == 1
+        && normalizeStatementForDirectSubstitution(tool.statement())
+            .equals(":" + tool.parameters().get(0).name());
+  }
+
+  static String normalizeStatementForDirectSubstitution(String statement) {
+    return LINE_COMMENT.matcher(STRING_LITERAL.matcher(statement).replaceAll("''"))
+        .replaceAll("").trim();
   }
 
   /** Applies defaults, required checks, and type coercion for each declared parameter. */

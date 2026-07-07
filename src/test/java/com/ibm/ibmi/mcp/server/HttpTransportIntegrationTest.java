@@ -82,6 +82,43 @@ class HttpTransportIntegrationTest {
 
   @Test
   @Timeout(15)
+  void httpToolsListIncludesExecuteSqlWhenEnabled(@TempDir Path tempDir) throws Exception {
+    String baseUrl = startServer(tempDir, true);
+    HttpClient client = HttpClient.newHttpClient();
+
+    String sessionId = initializeSession(client, baseUrl);
+    postNotification(client, baseUrl, sessionId, "notifications/initialized");
+
+    HttpResponse<String> listResponse = postJson(client, baseUrl, sessionId, """
+        {
+          "jsonrpc": "2.0",
+          "id": 2,
+          "method": "tools/list"
+        }
+        """);
+    assertEquals(200, listResponse.statusCode(), listResponse.body());
+
+    JsonNode tools = extractJsonRpcResult(listResponse.body()).path("tools");
+    assertTrue(tools.isArray());
+    assertEquals(2, tools.size());
+
+    JsonNode executeSql = null;
+    for (JsonNode tool : tools) {
+      if ("execute_sql".equals(tool.path("name").asText())) {
+        executeSql = tool;
+        break;
+      }
+    }
+    assertNotNull(executeSql, "execute_sql should appear in tools/list when gate is enabled");
+
+    JsonNode required = executeSql.path("inputSchema").path("required");
+    assertTrue(required.isArray());
+    assertEquals(1, required.size());
+    assertEquals("sql", required.get(0).asText());
+  }
+
+  @Test
+  @Timeout(15)
   void httpToolsCallReturnsStructuredOutput(@TempDir Path tempDir) throws Exception {
     String baseUrl = startServer(tempDir);
     HttpClient client = HttpClient.newHttpClient();
@@ -142,13 +179,18 @@ class HttpTransportIntegrationTest {
   }
 
   private String startServer(Path tempDir) throws Exception {
+    return startServer(tempDir, false);
+  }
+
+  private String startServer(Path tempDir, boolean enableExecuteSql) throws Exception {
     Path yaml = tempDir.resolve("tools.yaml");
     Files.writeString(yaml, MINIMAL_TOOLS_YAML);
 
     ToolsConfig config = new YamlConfigLoader(Map.of()).load(yaml);
     TransportConfig transport = new TransportConfig("127.0.0.1", 0, TransportConfig.DEFAULT_ENDPOINT);
     McpServerRunner.ServerHandle[] slot = new McpServerRunner.ServerHandle[1];
-    handle = McpServerRunner.startHttp(config, Set.of(), transport, slot);
+    handle = McpServerRunner.startHttp(
+        config, Set.of(), transport, slot, enableExecuteSql, true);
 
     int port = HttpTransport.localPort(handle.jettyServer());
     return "http://127.0.0.1:" + port + TransportConfig.DEFAULT_ENDPOINT;

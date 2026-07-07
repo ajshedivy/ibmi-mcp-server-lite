@@ -63,9 +63,10 @@ public final class SqlToolHandler
     RequestContext context = RequestContext.create(tool.name());
     try {
       BoundStatement bound = ParameterProcessor.prepare(tool, request.arguments());
-      if (tool.security() != SecurityConfig.DEFAULTS) {
-        // Reference behavior: tools with an explicit security block are re-validated
-        // against the processed SQL at execution time.
+      if (tool.security() != SecurityConfig.DEFAULTS
+          || ParameterProcessor.isDirectSubstitution(tool)) {
+        // Re-validate processed SQL at execution time for tools with an explicit security
+        // block and for direct-substitution tools (statement exactly :param).
         SqlSecurityValidator.validate(bound.sql(), tool.security());
       }
 

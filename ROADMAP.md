@@ -77,10 +77,7 @@ Replace the brittle keyword-regex read-only check with a real Db2 for i statemen
 
 **Implemented:**
 - ✅ [#13](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/13) — Tokenizer-based SQL security validation (`SqlTokenizer` + statement-type classifier, regex fallback)
-
-| # | Issue | Difficulty | Estimate |
-|---|---|---|---|
-| [#14](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/14) | [Add the built-in execute_sql tool gated by IBMI_ENABLE_EXECUTE_SQL](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/14) | 🔴 advanced | M (3-5 days) |
+- ✅ [#14](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/14) — Built-in `execute_sql` tool gated by `IBMI_ENABLE_EXECUTE_SQL` / `--execute-sql` (direct-substitution SELECTs, read-only by default)
 
 ## M5 — HTTP Transport & Deployment
 

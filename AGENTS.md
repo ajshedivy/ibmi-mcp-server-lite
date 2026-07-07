@@ -61,8 +61,9 @@ entries (`util/DotEnv`).
 
 Security model: tools are read-only by default — `SqlSecurityValidator` allows only
 SELECT/WITH plus a forbidden-keyword scan (string literals and `--` comments stripped
-first). Validation runs at load time for all selected tools, and again at call time only
-for tools with an explicit `security:` block. `:name` values are never spliced into SQL —
+first). Validation runs at startup for all selected tools, and again at call time
+for tools with an explicit `security:` block and for direct-substitution tools
+(statement exactly `:<paramName>`). `:name` values are never spliced into SQL —
 they become `?` bind parameters; arrays expand to one `?` per element, booleans bind as 1/0.
 
 Tool results mirror the reference server's `StandardSqlToolOutput` shape

@@ -125,6 +125,15 @@ default binds as an empty string when omitted.
 - A placeholder with no matching parameter definition is left verbatim and will fail at
   the database — declare every placeholder.
 
+**Direct substitution** (special case used by the built-in `execute_sql` tool): when a
+tool has exactly one parameter and the normalized statement is exactly `:<paramName>`
+(leading line comments and string literals stripped before comparison), the string
+argument value becomes the entire SQL text with no bind parameters. For example,
+`-- note\n:sql` with a single `sql` parameter qualifies. Load-time read-only validation
+is skipped for qualifying tools (the placeholder is validated after substitution at call
+time). YAML tools using this pattern must declare parameter constraints (`minLength`,
+`maxLength`, `pattern`, `enum`) — they are enforced at call time like any other tool.
+
 ### `security`
 
 ```yaml
@@ -139,7 +148,8 @@ classify as `SELECT` or `WITH` via a SQL tokenizer (`EXEC SQL` and `label:` pref
 skipped before classification). If tokenization fails, a regex fallback strips literals
 and comments and scans for dangerous keywords. Validation runs at startup for every
 registered tool, and again at call time (on the processed SQL) for tools that declare a
-`security` block. Set `security.readOnly: false` explicitly to allow data-changing
+`security` block or use direct substitution (`statement` exactly `:<paramName>`). Set
+`security.readOnly: false` explicitly to allow data-changing
 statements.
 
 ### `annotations`
@@ -218,4 +228,6 @@ a newly added source will fail reload until the process is restarted.
 - Lightweight tokenizer for read-only validation (not the reference's full vscode-db2i
   parser); top-level statement-type classification only — nested DML inside a `SELECT` or
   `WITH` is not checked separately (same as the reference primary path).
-- No `typescript_tools` section, no built-in tools (`execute_sql`, `generate_sql`).
+- No `typescript_tools` section. The reference's `generate_sql` text-to-SQL toolset is not
+  ported. The opt-in built-in `execute_sql` tool **is** available via `--execute-sql` or
+  `IBMI_ENABLE_EXECUTE_SQL=true` (read-only by default via `IBMI_EXECUTE_SQL_READONLY`).

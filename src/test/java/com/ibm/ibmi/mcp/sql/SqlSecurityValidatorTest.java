@@ -144,4 +144,10 @@ class SqlSecurityValidatorTest {
     assertDoesNotThrow(() -> SqlSecurityValidator.validate(
         "SELECT 'can''t DROP' FROM T\"", SecurityConfig.DEFAULTS));
   }
+
+  @Test
+  void barePlaceholderSqlIsValidatedWhenCalledDirectly() {
+    assertThrows(SecurityException.class, () -> SqlSecurityValidator.validate(
+        ":sql", SecurityConfig.DEFAULTS));
+  }
 }

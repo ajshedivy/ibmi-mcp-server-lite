@@ -51,6 +51,7 @@ public final class Main {
              --list-tools               Print all enabled tools defined in the YAML file and exit
              --env-file <path>          .env file for ${VAR} interpolation and env vars (default: ./.env)
              --no-reload                Disable hot-reload of tools YAML (env: YAML_AUTO_RELOAD)
+             --execute-sql              Enable the execute_sql tool (overrides env: IBMI_ENABLE_EXECUTE_SQL)
              --version                  Print version and exit
              --transport <stdio|http>   Transport (default: stdio; env: MCP_TRANSPORT_TYPE)
              --http-port <port>         HTTP port (default: 3010; env: MCP_HTTP_PORT)
@@ -76,6 +77,7 @@ public final class Main {
     boolean listToolsets = false;
     boolean listTools = false;
     boolean noReload = false;
+    boolean executeSql = false;
 
     for (int i = 0; i < args.length; i++) {
       switch (args[i]) {
@@ -85,6 +87,7 @@ public final class Main {
         case "--list-toolsets" -> listToolsets = true;
         case "--list-tools" -> listTools = true;
         case "--no-reload" -> noReload = true;
+        case "--execute-sql" -> executeSql = true;
         case "--transport" -> transport = requireValue(args, ++i, "--transport");
         case "--http-port" -> httpPort = requireValue(args, ++i, "--http-port");
         case "--http-host" -> httpHost = requireValue(args, ++i, "--http-host");
@@ -153,6 +156,9 @@ public final class Main {
     }
 
     boolean yamlAutoReload = resolveYamlAutoReload(env, noReload);
+    boolean enableExecuteSql = resolveExecuteSql(env, executeSql);
+    boolean executeSqlReadonly = resolveExecuteSqlReadonly(env);
+
     CountDownLatch shutdownLatch = new CountDownLatch(1);
     AtomicBoolean shuttingDown = new AtomicBoolean(false);
     McpServerRunner.ServerHandle[] handleSlot = new McpServerRunner.ServerHandle[1];
@@ -166,11 +172,13 @@ public final class Main {
     Runtime.getRuntime().addShutdownHook(new Thread(shutdown, "shutdown-cleanup"));
 
     if (httpMode) {
-      handleSlot[0] = McpServerRunner.startHttp(config, selected, transportConfig, handleSlot);
+      handleSlot[0] = McpServerRunner.startHttp(
+          config, selected, transportConfig, handleSlot, enableExecuteSql, executeSqlReadonly);
     } else {
       InputStream stdin = new EofNotifyingInputStream(
           System.in, () -> new Thread(shutdown, "stdin-eof").start());
-      handleSlot[0] = McpServerRunner.start(config, selected, stdin, handleSlot);
+      handleSlot[0] = McpServerRunner.start(
+          config, selected, stdin, handleSlot, enableExecuteSql, executeSqlReadonly);
     }
 
     if (yamlAutoReload) {
@@ -323,4 +331,25 @@ public final class Main {
     System.err.println(USAGE);
     System.exit(2);
   }
+
+  static boolean resolveExecuteSql(Map<String, String> env, boolean executeSqlCli) {
+    if (executeSqlCli) {
+      return true;  // --execute-sql wins over env
+    }
+    return isTruthy(env.get("IBMI_ENABLE_EXECUTE_SQL"));  // default false when unset
+  }
+
+  static boolean resolveExecuteSqlReadonly(Map<String, String> env) {
+    String value = env.get("IBMI_EXECUTE_SQL_READONLY");
+    if (value == null || value.isBlank()) {
+      return true;  // default read-only ON
+    }
+    return isTruthy(value);
+  }
+
+  private static boolean isTruthy(String value) {
+    return "true".equalsIgnoreCase(value) || "1".equals(value);
+  }
+
+
 }

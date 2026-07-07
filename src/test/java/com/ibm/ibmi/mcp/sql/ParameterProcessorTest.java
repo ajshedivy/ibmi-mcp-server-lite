@@ -19,6 +19,12 @@ class ParameterProcessorTest {
     return new ParameterConfig(name, type, null, dflt, required, null, null, null, null, null, null, null);
   }
 
+  private static ParameterConfig paramWithLength(
+      String name, String type, Object dflt, Boolean required, int minLength, int maxLength) {
+    return new ParameterConfig(
+        name, type, null, dflt, required, null, null, null, minLength, maxLength, null, null);
+  }
+
   private static SqlToolConfig tool(String statement, ParameterConfig... params) {
     return new SqlToolConfig("test_tool", true, "src", "desc", statement,
         List.of(params), null, null, null, Map.of(), SecurityConfig.DEFAULTS, null, null, null, null);
@@ -98,5 +104,83 @@ class ParameterProcessorTest {
         tool("SELECT :unknown FROM T WHERE C = :val", param("val", "string", null, true)),
         Map.of("val", "x"));
     assertEquals("SELECT :unknown FROM T WHERE C = ?", bound.sql());
+  }
+
+  @Test
+  void directSubstitutionReturnsSqlWithEmptyBindings() {
+    String query = "SELECT 1 FROM SYSIBM.SYSDUMMY1";
+    BoundStatement bound = ParameterProcessor.prepare(
+        tool(":sql", param("sql", "string", null, true)),
+        Map.of("sql", query));
+    assertEquals(query, bound.sql());
+    assertTrue(bound.parameters().isEmpty());
+  }
+
+  @Test
+  void directSubstitutionMissingSqlThrows() {
+    IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+        () -> ParameterProcessor.prepare(
+            tool(":sql", param("sql", "string", null, true)), Map.of()));
+    assertTrue(e.getMessage().contains("sql"));
+    assertTrue(e.getMessage().contains("direct substitution"));
+  }
+
+  @Test
+  void directSubstitutionNonStringSqlThrows() {
+    IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+        () -> ParameterProcessor.prepare(
+            tool(":sql", param("sql", "string", null, true)),
+            Map.of("sql", 42)));
+    assertTrue(e.getMessage().contains("sql"));
+    assertTrue(e.getMessage().contains("direct substitution"));
+  }
+
+  @Test
+  void directSubstitutionRejectsEmptySql() {
+    IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+        () -> ParameterProcessor.prepare(
+            tool(":sql", paramWithLength("sql", "string", null, true, 1, 10_000)),
+            Map.of("sql", "")));
+    assertTrue(e.getMessage().contains("sql"));
+    assertTrue(e.getMessage().contains("at least 1 characters"));
+  }
+
+  @Test
+  void directSubstitutionRejectsOversizedSql() {
+    IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+        () -> ParameterProcessor.prepare(
+            tool(":sql", paramWithLength("sql", "string", null, true, 1, 10_000)),
+            Map.of("sql", "x".repeat(10_001))));
+    assertTrue(e.getMessage().contains("sql"));
+    assertTrue(e.getMessage().contains("at most 10000 characters"));
+  }
+
+  @Test
+  void directSubstitutionRejectsInputExceedingMaxLength() {
+    IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+        () -> ParameterProcessor.prepare(
+            tool(":sql", paramWithLength("sql", "string", null, true, 1, 10)),
+            Map.of("sql", "x".repeat(11))));
+    assertTrue(e.getMessage().contains("sql"));
+    assertTrue(e.getMessage().contains("at most 10 characters"));
+  }
+
+  @Test
+  void directSubstitutionRecognizesCommentPrefixedStatement() {
+    String query = "SELECT 1 FROM SYSIBM.SYSDUMMY1";
+    BoundStatement bound = ParameterProcessor.prepare(
+        tool("-- note\n:sql", param("sql", "string", null, true)),
+        Map.of("sql", query));
+    assertEquals(query, bound.sql());
+    assertTrue(bound.parameters().isEmpty());
+  }
+
+  @Test
+  void singleParameterWithFullStatementUsesPositionalBinding() {
+    BoundStatement bound = ParameterProcessor.prepare(
+        tool("SELECT * FROM T WHERE id = :id", param("id", "string", null, true)),
+        Map.of("id", "A00"));
+    assertEquals("SELECT * FROM T WHERE id = ?", bound.sql());
+    assertEquals(List.of("A00"), bound.parameters());
   }
 }
