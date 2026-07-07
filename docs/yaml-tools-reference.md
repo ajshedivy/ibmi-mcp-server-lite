@@ -139,7 +139,8 @@ classify as `SELECT` or `WITH` via a SQL tokenizer (`EXEC SQL` and `label:` pref
 skipped before classification). If tokenization fails, a regex fallback strips literals
 and comments and scans for dangerous keywords. Validation runs at startup for every
 registered tool, and again at call time (on the processed SQL) for tools that declare a
-`security` block. Set `security.readOnly: false` explicitly to allow data-changing
+`security` block or use direct substitution (`statement` exactly `:<paramName>`). Set
+`security.readOnly: false` explicitly to allow data-changing
 statements.
 
 ### `annotations`
