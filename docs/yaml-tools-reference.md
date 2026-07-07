@@ -218,4 +218,6 @@ a newly added source will fail reload until the process is restarted.
 - Lightweight tokenizer for read-only validation (not the reference's full vscode-db2i
   parser); top-level statement-type classification only — nested DML inside a `SELECT` or
   `WITH` is not checked separately (same as the reference primary path).
-- No `typescript_tools` section, no built-in tools (`execute_sql`, `generate_sql`).
+- No `typescript_tools` section. The reference's `generate_sql` text-to-SQL toolset is not
+  ported. The opt-in built-in `execute_sql` tool **is** available via `--execute-sql` or
+  `IBMI_ENABLE_EXECUTE_SQL=true` (read-only by default via `IBMI_EXECUTE_SQL_READONLY`).

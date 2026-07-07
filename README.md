@@ -135,6 +135,27 @@ Key semantics (full details in [docs/yaml-tools-reference.md](docs/yaml-tools-re
 - Tools are **read-only by default**: only SELECT/WITH statements pass validation unless
   a tool sets `security.readOnly: false`.
 - `--toolsets a,b` (or `SELECTED_TOOLSETS`) registers only the tools in those toolsets.
+
+### Built-in `execute_sql` tool (opt-in)
+
+The reference server ships an ad-hoc `execute_sql` escape hatch for exploration and
+text-to-SQL workflows. The lite server registers the same built-in when enabled:
+
+```bash
+# CLI (wins over env)
+java -jar target/ibmi-mcp-server-lite-0.1.0.jar --tools tools/sample-tools.yaml --execute-sql
+
+# Or via .env / process env
+IBMI_ENABLE_EXECUTE_SQL=true
+IBMI_EXECUTE_SQL_READONLY=true   # default; set false to allow writes
+```
+
+When enabled, `execute_sql` appears in `tools/list` alongside YAML tools. It accepts a
+single required `sql` string, uses direct substitution (`:sql` → verbatim SQL), and
+re-validates the substituted statement at call time (read-only by default: only
+`SELECT`/`WITH` pass). If multiple sources are defined, the first source key in YAML
+merge order is used.
+
 - **Hot-reload** (default on): when any resolved tools YAML file changes on disk, the server
   re-merges and updates the live tool registry without restarting. See
   [Hot-reloading tools YAML](#hot-reloading-tools-yaml) below.
@@ -187,6 +208,8 @@ Desktop) that holds the stdio session open.
 | `--list-toolsets` | — | Print toolsets and exit |
 | `--list-tools` | — | Print all enabled tools and exit |
 | `--no-reload` | `YAML_AUTO_RELOAD` | Disable hot-reload of tools YAML (env default: on) |
+| `--execute-sql` | `IBMI_ENABLE_EXECUTE_SQL` | Register the built-in `execute_sql` tool (CLI wins; default off) |
+| — | `IBMI_EXECUTE_SQL_READONLY` | Read-only mode for `execute_sql` (default on: `true` or `1`) |
 | `--env-file <path>` | — | `.env` file for `${VAR}` interpolation (default `./.env`) |
 | `--version` / `--help` | — | Print and exit |
 | — | `MCP_LOG_LEVEL` | `debug`, `info` (default), `warn`, `error` — logs go to **stderr** |
