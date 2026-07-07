@@ -265,5 +265,4 @@ class MainTest {
     Map<String, String> env = com.ibm.ibmi.mcp.util.DotEnv.environment(envFile);
     assertTrue(Main.resolveExecuteSql(env, false));
   }
-  }
 }
