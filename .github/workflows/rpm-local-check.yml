@@ -37,6 +37,20 @@ jobs:
       - name: Install rpmbuild + maven
         run: sudo apt-get update && sudo apt-get install -y rpm maven
 
+      # The spec %undefines _disable_source_fetch, which cancels our --define below,
+      # so Ubuntu's rpm (4.19) would try to download the remote Source0 tarball and
+      # 404 (no such release tag). --build-in-place never actually unpacks this, but
+      # rpm still requires Source0 to be present, so stage a real archive from HEAD
+      # into SOURCES. Version comes from the spec itself to lock the expected filename.
+      - name: Stage source tarball so rpm skips the remote download
+        run: |
+          set -euo pipefail
+          mkdir -p rpmbuild/SOURCES
+          VERSION=$(sed -n 's/^Version:[[:space:]]*//p' packaging/rpm/ibmi-mcp-server-lite.spec | head -n1)
+          echo "Staging source tarball for version: $VERSION"
+          git archive --prefix="ibmi-mcp-server-lite-$VERSION/" \
+            -o "rpmbuild/SOURCES/ibmi-mcp-server-lite-$VERSION.tar.gz" HEAD
+
       # setup-java exports JAVA_HOME; the Makefile's `JAVA_HOME ?=` keeps that
       # env value instead of the IBM i default, so maven builds with the runner JDK 17.
       - name: Build the RPM with IBM i path macros
