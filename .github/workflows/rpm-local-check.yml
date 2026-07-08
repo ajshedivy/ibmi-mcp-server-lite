@@ -53,10 +53,14 @@ jobs:
 
       # setup-java exports JAVA_HOME; the Makefile's `JAVA_HOME ?=` keeps that
       # env value instead of the IBM i default, so maven builds with the runner JDK 17.
+      # --nodeps skips the BuildRequires check: those name IBM i OSS packages
+      # (make-gnu, ca-certificates-mozilla, maven) that aren't in Ubuntu's rpm db.
+      # This runner already provides the real tools (JDK 17 + apt maven/rpm), and
+      # the spec keeps the BuildRequires correct for the actual IBM i build.
       - name: Build the RPM with IBM i path macros
         run: |
           mkdir -p rpmbuild
-          rpmbuild -bb --build-in-place \
+          rpmbuild -bb --build-in-place --nodeps \
             --define "_topdir $PWD/rpmbuild" \
             --define "_bindir /QOpenSys/pkgs/bin" \
             --define "_libdir /QOpenSys/pkgs/lib" \
