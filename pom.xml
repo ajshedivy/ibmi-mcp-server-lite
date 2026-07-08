@@ -29,6 +29,10 @@
     <slf4j.version>2.0.17</slf4j.version>
     <junit.version>5.11.4</junit.version>
     <jetty.version>12.0.16</jetty.version>
+    <surefire.version>3.5.2</surefire.version>
+    <failsafe.version>3.5.2</failsafe.version>
+    <!-- Live Mapepire integration tests can be slow over the network -->
+    <integration.test.timeout.seconds>120</integration.test.timeout.seconds>
   </properties>
 
   <dependencyManagement>
@@ -100,7 +104,13 @@
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
-        <version>3.5.2</version>
+        <version>${surefire.version}</version>
+        <configuration>
+          <!-- *IT.java is run by Failsafe under the integration-tests profile only -->
+          <excludes>
+            <exclude>**/*IT.java</exclude>
+          </excludes>
+        </configuration>
       </plugin>
       <!-- Fat jar: single artifact deployable to IBM i with `java -jar` -->
       <plugin>
@@ -136,4 +146,44 @@
       </plugin>
     </plugins>
   </build>
+
+  <profiles>
+  <!--
+    Live Mapepire integration tests (*IT.java). Activate explicitly:
+      ./mvnw verify -Pintegration-tests
+    Also auto-activates when DB2i_HOST is set in the environment.
+    Normal ./mvnw test / ./mvnw package never runs these.
+  -->
+    <profile>
+      <id>integration-tests</id>
+      <activation>
+        <property>
+          <name>env.DB2i_HOST</name>
+        </property>
+      </activation>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-failsafe-plugin</artifactId>
+            <version>${failsafe.version}</version>
+            <executions>
+              <execution>
+                <goals>
+                  <goal>integration-test</goal>
+                  <goal>verify</goal>
+                </goals>
+              </execution>
+            </executions>
+            <configuration>
+              <includes>
+                <include>**/*IT.java</include>
+              </includes>
+              <forkedProcessTimeoutInSeconds>${integration.test.timeout.seconds}</forkedProcessTimeoutInSeconds>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 </project>
