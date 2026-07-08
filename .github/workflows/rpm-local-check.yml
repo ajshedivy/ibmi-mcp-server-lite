@@ -34,8 +34,10 @@ jobs:
           distribution: 'temurin'
           cache: maven
 
-      - name: Install rpmbuild + maven
-        run: sudo apt-get update && sudo apt-get install -y rpm maven
+      # Only rpmbuild is needed from apt; the Maven build uses the repo's wrapper
+      # (see the Build step) rather than Ubuntu's stale apt maven.
+      - name: Install rpmbuild
+        run: sudo apt-get update && sudo apt-get install -y rpm
 
       # The spec %undefines _disable_source_fetch, which cancels our --define below,
       # so Ubuntu's rpm (4.19) would try to download the remote Source0 tarball and
@@ -55,9 +57,16 @@ jobs:
       # env value instead of the IBM i default, so maven builds with the runner JDK 17.
       # --nodeps skips the BuildRequires check: those name IBM i OSS packages
       # (make-gnu, ca-certificates-mozilla, maven) that aren't in Ubuntu's rpm db.
-      # This runner already provides the real tools (JDK 17 + apt maven/rpm), and
-      # the spec keeps the BuildRequires correct for the actual IBM i build.
+      # This runner already provides the real tools (JDK 17 + apt rpm), and the
+      # spec keeps the BuildRequires correct for the actual IBM i build.
+      #
+      # MVN points make (Makefile honors `MVN ?= mvn`) at the repo's Maven wrapper
+      # (3.9.16). Ubuntu's apt maven binds maven-compiler-plugin 3.1, which ignores
+      # maven.compiler.release=17 and defaults to source/target 5 (rejected by JDK 17).
+      # rpmbuild inherits this env into the %build scriptlet, same as JAVA_HOME.
       - name: Build the RPM with IBM i path macros
+        env:
+          MVN: ${{ github.workspace }}/mvnw
         run: |
           mkdir -p rpmbuild
           rpmbuild -bb --build-in-place --nodeps \
