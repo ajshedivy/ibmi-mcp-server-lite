@@ -1,4 +1,4 @@
-# SKELETON .spec for the IBM i OSS environment (/QOpenSys/pkgs), modeled on
+# .spec for the IBM i OSS environment (/QOpenSys/pkgs), modeled on
 # ThePrez/ServiceCommander-IBMi's service-commander.spec (the public reference
 # for Java/Maven RPMs on IBM i).
 #
@@ -8,19 +8,19 @@
 #   - Files are owned by qsys with group *none (there is no root on IBM i).
 #   - BuildArch is noarch: this package ships only a jar + scripts.
 #
-# TODO:
-#   - Java 17 runtime: IBM's yum repo currently ships openjdk-11 only, and the
-#     MCP Java SDK needs 17+. Options: wait for an openjdk-17/21 RPM, require
-#     IBM Semeru Runtime Certified Edition 17 (5770-JV1), or downlevel the
-#     server. Until resolved this spec cannot produce a runnable package.
-#   - Verify BuildRequires on a real build partition and fill %changelog.
+# Java 17 runtime: this package uses IBM Technology for Java 17 (Semeru Certified
+# Edition, 5770-JV1 option 20) at /QOpenSys/QIBM/ProdData/JavaVM/jdk17/64bit. That is
+# a system OS option, not a yum RPM, so there is no openjdk-17 dependency to declare;
+# the launcher (packaging/ibmi/ibmi-mcp-server-lite.sh) and Makefile hardcode the path.
+# The build also runs under Java 17 (pom.xml sets maven.compiler.release=17), so the
+# build partition must have option 20 installed. See docs/running-on-ibmi.md.
 %undefine _disable_source_fetch
 Name: ibmi-mcp-server-lite
 Version: 0.1.0
-Release: 0
+Release: 1
 License: Apache-2.0
-Summary: Skeleton MCP server for IBM i (YAML SQL tools over Mapepire)
-Url: https://github.com/IBM/ibmi-mcp-server
+Summary: Minimal MCP server for IBM i (YAML SQL tools over Mapepire)
+Url: https://github.com/ajshedivy/ibmi-mcp-server-lite
 BuildArch: noarch
 
 # ca-certificates-mozilla is required for maven to download dependencies on IBM i
@@ -28,15 +28,11 @@ BuildArch: noarch
 BuildRequires: ca-certificates-mozilla
 BuildRequires: make-gnu
 BuildRequires: maven
-# TODO: replace with the Java 17 runtime package once available.
-BuildRequires: openjdk-11
 
 Requires: bash
 Requires: coreutils-gnu
-# TODO: replace with the Java 17 runtime package once available.
-Requires: openjdk-11
 
-Source0: https://github.com/IBM/ibmi-mcp-server/archive/refs/tags/v%{version}.tar.gz#/%{name}-%{version}.tar.gz
+Source0: https://github.com/ajshedivy/ibmi-mcp-server-lite/archive/refs/tags/v%{version}.tar.gz#/%{name}-%{version}.tar.gz
 
 %description
 A minimal MCP (Model Context Protocol) server for IBM i written in Java.
@@ -65,8 +61,15 @@ fi
 %{_bindir}/%{name}
 %{_libdir}/%{name}
 %config(noreplace) %{_sysconfdir}/%{name}/*
+# Service Commander unit (start_cmd uses --transport http, which is now supported).
+# Functional when Service Commander (sc) is installed; harmless otherwise. The Makefile
+# always installs it, so it exists in the buildroot and rpmbuild succeeds.
 %config(noreplace) %{_sysconfdir}/sc/services/%{name}.yaml
 
 %changelog
+* Tue Jul 07 2026 ibmi-mcp-server-lite <xavier.stevermer@ibm.com> - 0.1.0-1
+- First working RPM: builds and runs on IBM Technology for Java 17 (5770-JV1
+  option 20); Source0 points at the ibmi-mcp-server-lite repo; no openjdk-17 dep.
+
 * Wed Jun 10 2026 IBM i MCP project <noreply@ibm.com> - 0.1.0-0
 - Initial skeleton package (not yet buildable; see TODOs above)

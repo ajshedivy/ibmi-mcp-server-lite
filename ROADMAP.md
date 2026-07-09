@@ -89,10 +89,7 @@ Take the server off per-client stdio and onto a long-lived deployment footprint:
 
 **Implemented:**
 - ✅ [#15](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/15) — Streamable HTTP transport (`--transport http`) via embedded Jetty
-
-| # | Issue | Difficulty | Estimate |
-|---|---|---|---|
-| [#16](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/16) | [Finish the IBM i RPM packaging pipeline (resolve Java 17, complete spec, enable workflow)](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/16) | 🔴 advanced | L (1-2 weeks) |
+- ✅ [#16](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/16) — IBM i RPM packaging pipeline: runtime resolved to IBM Technology for Java 17 (5770-JV1 option 20), spec completed, SSH-`rpmbuild` workflow enabled with a tag-triggered GitHub Release asset
 
 ## M6 — Upstream & Test Infrastructure
 

@@ -1,12 +1,13 @@
 # Build/install targets consumed by the RPM spec (%make_build / %make_install),
 # following the ServiceCommander-IBMi pattern for Java Maven RPMs on IBM i.
 #
-# TODO: JAVA_HOME points at openjdk-11 (the only JDK in IBM's yum repo
-# today) but the MCP Java SDK needs 17 — see docs/running-on-ibmi.md.
+# JAVA_HOME points at IBM Technology for Java 17 (Semeru Certified Edition,
+# 5770-JV1 option 20). Java 17 is required both to build (pom.xml sets
+# maven.compiler.release=17) and to run — see docs/running-on-ibmi.md.
 
 VERSION ?= 0.1.0
 INSTALL_ROOT ?=
-JAVA_HOME ?= /QOpenSys/pkgs/lib/jvm/openjdk-11
+JAVA_HOME ?= /QOpenSys/QIBM/ProdData/JavaVM/jdk17/64bit
 MVN ?= mvn
 
 PKG = ibmi-mcp-server-lite

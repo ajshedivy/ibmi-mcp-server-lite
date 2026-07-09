@@ -1,8 +1,7 @@
 # Running on IBM i
 
 The deployment unit is the shaded fat jar (`target/ibmi-mcp-server-lite-<version>.jar`).
-This page covers deploying to the IFS, the PASE specifics, the RPM skeleton, and the one
-open blocker: **a Java 17 runtime on IBM i**.
+This page covers deploying to the IFS, the PASE specifics, the RPM pipeline, and the supported Java 17 runtime on IBM i.
 
 ## Current status (verified June 2026 on IBM i 7.4)
 
@@ -10,7 +9,7 @@ open blocker: **a Java 17 runtime on IBM i**.
 |---|---|
 | Server anywhere with Java 17 → SQL on IBM i via Mapepire | ✅ works (see `scripts/smoke-test.py`) |
 | Server on IBM i under yum `openjdk-11` | ❌ `UnsupportedClassVersionError` (SDK needs class file 61 / Java 17) |
-| Server on IBM i under a Java 17 runtime | ⏳ blocked on runtime availability — details below |
+| Server on IBM i under IBM Technology for Java 17 (5770-JV1 option 20) | ✅ supported — install option 20 and point `JAVA` at its path (below) |
 
 The MCP Java SDK requires **Java 17**. On IBM i today:
 
@@ -83,9 +82,9 @@ Practical consequences:
   WebSocket client when `rejectUnauthorized=false` — a good upstream contribution
   (see the roadmap).
 
-## RPM packaging skeleton
+## RPM packaging
 
-`.github/workflows/rpm-ibmi.yml` skeletons the public IBM i RPM pipeline used by
+`.github/workflows/rpm-ibmi.yml` runs the public IBM i RPM pipeline used by
 [ServiceCommander-IBMi](https://github.com/ThePrez/ServiceCommander-IBMi) (the same
 ecosystem as [mapepire-server](https://github.com/Mapepire-IBMi/mapepire-server), which
 itself ships a fat jar + zip from GitHub Actions and is RPM-packaged by IBM internally):
@@ -94,13 +93,32 @@ itself ships a fat jar + zip from GitHub Actions and is RPM-packaged by IBM inte
    (`--rsync-path=/QOpenSys/pkgs/bin/rsync`).
 2. `/QOpenSys/pkgs/bin/rpmbuild -bb --build-in-place packaging/rpm/ibmi-mcp-server-lite.spec`
    runs **on the IBM i**; `%build`/`%install` delegate to the repo `Makefile`.
-3. RPMs are `scp`'d back and uploaded as artifacts / release assets.
+3. RPMs are `scp`'d back, uploaded as an Actions artifact, and (on `v*` tag builds)
+   attached to the matching GitHub Release.
 
-The workflow is inert until the `ENABLE_IBMI_RPM_BUILD` repository variable is set and
-the `IBMI_BUILD_SYS` / `IBMI_BUILD_USRPRF` / `IBMI_BUILD_PVTKEY` secrets exist. The spec
-(`packaging/rpm/ibmi-mcp-server-lite.spec`) is `noarch`, installs under
-`/QOpenSys/pkgs/{bin,lib}` + `/QOpenSys/etc`, and carries TODO markers (most
-importantly the Java 17 `Requires`). A Service Commander unit
-(`packaging/ibmi/service-commander-def.yaml`) is included for when the HTTP transport
-exists — stdio servers are spawned per-client and don't need a daemon manager. HTTP serves
-plain text (no TLS); terminate TLS at a reverse proxy or private-network boundary if needed.
+The spec (`packaging/rpm/ibmi-mcp-server-lite.spec`) is `noarch` and installs under
+`/QOpenSys/pkgs/{bin,lib}` + `/QOpenSys/etc`. After `yum install`, the launcher is
+`/QOpenSys/pkgs/bin/ibmi-mcp-server-lite`, the jar is at
+`/QOpenSys/pkgs/lib/ibmi-mcp-server-lite/`, and `tools.yaml` is at
+`/QOpenSys/etc/ibmi-mcp-server-lite/` (CCSID 819).
+
+### Enabling the pipeline
+
+The workflow stays inert until the `ENABLE_IBMI_RPM_BUILD` repository variable is set to
+`true` and the `IBMI_BUILD_SYS` / `IBMI_BUILD_USRPRF` / `IBMI_BUILD_PVTKEY` secrets exist.
+The build partition must have:
+
+- `rpmbuild`, `rsync`, `maven`, `make-gnu`, `ca-certificates-mozilla` (all from IBM's
+  yum repo; `ca-certificates-mozilla` is required or Maven's TLS trust store is empty).
+- **IBM Technology for Java 17** (Semeru Certified Edition, 5770-JV1 option 20) at
+  `/QOpenSys/QIBM/ProdData/JavaVM/jdk17/64bit`. Java 17 is needed both to build
+  (`pom.xml` sets `maven.compiler.release=17`) and to run. It is a system OS option, not
+  a yum RPM, so the spec declares no `openjdk-17` dependency.
+
+A Service Commander unit (`packaging/ibmi/service-commander-def.yaml`) is shipped and
+now functional: it launches the server with `--transport http` (implemented via embedded
+Jetty), so `sc start ibmi-mcp-server-lite` runs it as a long-lived daemon on port 3010 —
+provided Service Commander (`sc`) is installed (the package does not hard-require it).
+The default stdio transport is still spawned per-client and needs no daemon manager. HTTP
+serves plain text (no TLS); terminate TLS at a reverse proxy or private-network boundary
+if needed.

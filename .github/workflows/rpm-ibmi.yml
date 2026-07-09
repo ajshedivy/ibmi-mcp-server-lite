@@ -1,4 +1,4 @@
-# SKELETON: build a yum RPM for the IBM i OSS environment (/QOpenSys/pkgs).
+# Build a yum RPM for the IBM i OSS environment (/QOpenSys/pkgs).
 #
 # This mirrors the public pipeline used by ThePrez/ServiceCommander-IBMi (the `sc`
 # tool that ships alongside mapepire-server): a GitHub-hosted runner rsyncs the
@@ -6,15 +6,15 @@
 # there. mapepire-server itself publishes a fat jar + zip from ubuntu-latest and
 # deploys with @ibm/ibmi-ci; the RPM in IBM's yum repo is built by IBM internally.
 #
-# TODO before enabling (set repository variable ENABLE_IBMI_RPM_BUILD=true):
-#   1. Provision a build IBM i partition with: rpmbuild, rsync, maven, a Java 17
-#      runtime (see docs/running-on-ibmi.md — openjdk-17 is NOT yet in IBM's yum
-#      repo), ca-certificates-mozilla.
+# To enable (set repository variable ENABLE_IBMI_RPM_BUILD=true):
+#   1. Provision a build IBM i partition with: rpmbuild, rsync, maven,
+#      ca-certificates-mozilla, and IBM Technology for Java 17 (Semeru Certified
+#      Edition, 5770-JV1 option 20) at /QOpenSys/QIBM/ProdData/JavaVM/jdk17/64bit
+#      (see docs/running-on-ibmi.md — Java 17 is a system OS option, not a yum RPM).
 #   2. Create repo secrets: IBMI_BUILD_SYS (host), IBMI_BUILD_USRPRF (user),
 #      IBMI_BUILD_PVTKEY (private key authorized on the partition).
-#   3. Finish packaging/rpm/ibmi-mcp-server-lite.spec (%files list, Requires).
-#   4. Decide the publish target: GitHub Release assets (shown below) and/or your
-#      own yum repo (createrepo + upload — not provided by IBM's public tooling).
+#   3. Optionally publish to your own yum repo (createrepo + upload — not provided
+#      by IBM's public tooling); tag builds already attach the RPM to a GitHub Release.
 name: RPM (IBM i)
 
 on:
@@ -28,9 +28,13 @@ env:
 
 jobs:
   rpm:
-    # Guard: skeleton stays inert until the IBM i build partition is configured.
+    # Guard: pipeline stays inert until the IBM i build partition is configured.
     if: ${{ vars.ENABLE_IBMI_RPM_BUILD == 'true' }}
     runs-on: ubuntu-latest
+    # softprops/action-gh-release needs contents:write to attach the RPM to the
+    # release; GITHUB_TOKEN defaults to read-only, so declare it explicitly.
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -71,8 +75,12 @@ jobs:
           name: ibmi-rpm
           path: RPMS/**/*.rpm
 
-      # TODO (release path): on tag builds, attach the RPM to a GitHub
-      # Release (softprops/action-gh-release) and optionally push to a yum repo.
+      # On tag builds (v*), attach the built RPM(s) to the matching GitHub Release.
+      - name: Attach RPM to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: RPMS/**/*.rpm
 
       - name: Cleanup remote build dir
         if: always()

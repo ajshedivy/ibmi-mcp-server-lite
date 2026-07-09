@@ -1,0 +1,106 @@
+# Validate the RPM packaging recipe without an IBM i partition.
+#
+# The spec (packaging/rpm/ibmi-mcp-server-lite.spec) is noarch and its %files paths
+# come from macros (%{_bindir}, %{_libdir}, %{_sysconfdir}). On a normal Linux runner
+# those macros default to /usr/bin etc., but the Makefile installs to hardcoded
+# /QOpenSys/... paths, so we override the three macros to the IBM i values to make
+# %files line up exactly as it would on a real partition. %post (setccsid/find) only
+# runs at install time, so `rpmbuild -bb` never touches it.
+#
+# This validates packaging *logic* and Java-17 *wiring* only. It cannot verify
+# IBM-i-specific runtime behavior (option-20 Java in PASE, setccsid 819, qsys
+# ownership, `sc start`) — those still need the gated rpm-ibmi.yml workflow.
+name: RPM (local check)
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'packaging/**'
+      - 'Makefile'
+      - 'pom.xml'
+      - '.github/workflows/rpm-local-check.yml'
+
+jobs:
+  rpm-local:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: maven
+
+      # Only rpmbuild is needed from apt; the Maven build uses the repo's wrapper
+      # (see the Build step) rather than Ubuntu's stale apt maven.
+      - name: Install rpmbuild
+        run: sudo apt-get update && sudo apt-get install -y rpm
+
+      # The spec %undefines _disable_source_fetch, which cancels our --define below,
+      # so Ubuntu's rpm (4.19) would try to download the remote Source0 tarball and
+      # 404 (no such release tag). --build-in-place never actually unpacks this, but
+      # rpm still requires Source0 to be present, so stage a real archive from HEAD
+      # into SOURCES. Version comes from the spec itself to lock the expected filename.
+      - name: Stage source tarball so rpm skips the remote download
+        run: |
+          set -euo pipefail
+          mkdir -p rpmbuild/SOURCES
+          VERSION=$(sed -n 's/^Version:[[:space:]]*//p' packaging/rpm/ibmi-mcp-server-lite.spec | head -n1)
+          echo "Staging source tarball for version: $VERSION"
+          git archive --prefix="ibmi-mcp-server-lite-$VERSION/" \
+            -o "rpmbuild/SOURCES/ibmi-mcp-server-lite-$VERSION.tar.gz" HEAD
+
+      # setup-java exports JAVA_HOME; the Makefile's `JAVA_HOME ?=` keeps that
+      # env value instead of the IBM i default, so maven builds with the runner JDK 17.
+      # --nodeps skips the BuildRequires check: those name IBM i OSS packages
+      # (make-gnu, ca-certificates-mozilla, maven) that aren't in Ubuntu's rpm db.
+      # This runner already provides the real tools (JDK 17 + apt rpm), and the
+      # spec keeps the BuildRequires correct for the actual IBM i build.
+      #
+      # MVN points make (Makefile honors `MVN ?= mvn`) at the repo's Maven wrapper
+      # (3.9.16). Ubuntu's apt maven binds maven-compiler-plugin 3.1, which ignores
+      # maven.compiler.release=17 and defaults to source/target 5 (rejected by JDK 17).
+      # rpmbuild inherits this env into the %build scriptlet, same as JAVA_HOME.
+      - name: Build the RPM with IBM i path macros
+        env:
+          MVN: ${{ github.workspace }}/mvnw
+        run: |
+          mkdir -p rpmbuild
+          rpmbuild -bb --build-in-place --nodeps \
+            --define "_topdir $PWD/rpmbuild" \
+            --define "_bindir /QOpenSys/pkgs/bin" \
+            --define "_libdir /QOpenSys/pkgs/lib" \
+            --define "_sysconfdir /QOpenSys/etc" \
+            --define "_disable_source_fetch 1" \
+            --define "__os_install_post %{nil}" \
+            packaging/rpm/ibmi-mcp-server-lite.spec
+
+      - name: Inspect and assert package contents
+        run: |
+          set -euo pipefail
+          RPM=$(ls rpmbuild/RPMS/noarch/*.rpm)
+          echo "== $RPM =="
+          rpm -qp --info "$RPM"
+          rpm -qlp "$RPM" | tee files.txt
+          rpm -qp --requires "$RPM" | tee requires.txt
+          for f in \
+            /QOpenSys/pkgs/bin/ibmi-mcp-server-lite \
+            /QOpenSys/pkgs/lib/ibmi-mcp-server-lite/ibmi-mcp-server-lite.jar \
+            /QOpenSys/etc/ibmi-mcp-server-lite/tools.yaml \
+            /QOpenSys/etc/sc/services/ibmi-mcp-server-lite.yaml ; do
+            grep -qxF "$f" files.txt || { echo "MISSING: $f"; exit 1; }
+          done
+          grep -qi 'openjdk' requires.txt && { echo "stale openjdk dep"; exit 1; } || true
+          echo "OK: layout + Java-17 wiring correct"
+
+      - name: Upload RPM + report
+        uses: actions/upload-artifact@v4
+        with:
+          name: ibmi-rpm-local
+          path: |
+            rpmbuild/RPMS/**/*.rpm
+            files.txt
+            requires.txt
