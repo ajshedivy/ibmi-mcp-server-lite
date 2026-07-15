@@ -75,10 +75,12 @@ cp .env.example .env   # fill DB2i_HOST / USER / PASS (and PORT if needed)
 ./mvnw verify -Pintegration-tests
 ```
 
-- `./mvnw test` / `./mvnw package` never run these tests (Surefire excludes `*IT.java`).
-- The profile also auto-activates when `DB2i_HOST` is set in the **process** environment
+- The profile is explicit opt-in: only `-Pintegration-tests` runs these tests. A plain
+  `./mvnw test` / `package` / `verify` never does, even with `DB2i_*` exported
   (Maven does not read `.env` itself; the IT helper reads `.env` at test runtime).
 - If credentials are missing, the IT suite is **skipped**, not failed.
+- The sample tools YAML reads `DB2i_PORT` (falling back to 8076 when unset), so both IT
+  classes honor a non-default Mapepire port.
 
 ## TLS hostname verification
 

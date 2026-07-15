@@ -31,8 +31,6 @@
     <jetty.version>12.0.16</jetty.version>
     <surefire.version>3.5.2</surefire.version>
     <failsafe.version>3.5.2</failsafe.version>
-    <!-- Live Mapepire integration tests can be slow over the network -->
-    <integration.test.timeout.seconds>120</integration.test.timeout.seconds>
   </properties>
 
   <dependencyManagement>
@@ -149,18 +147,13 @@
 
   <profiles>
   <!--
-    Live Mapepire integration tests (*IT.java). Activate explicitly:
+    Live Mapepire integration tests (*IT.java). Explicit opt-in only:
       ./mvnw verify -Pintegration-tests
-    Also auto-activates when DB2i_HOST is set in the environment.
-    Normal ./mvnw test / ./mvnw package never runs these.
+    Never auto-activates (even with DB2i_HOST exported), so a plain
+    ./mvnw test / package / verify stays hermetic and offline.
   -->
     <profile>
       <id>integration-tests</id>
-      <activation>
-        <property>
-          <name>env.DB2i_HOST</name>
-        </property>
-      </activation>
       <build>
         <plugins>
           <plugin>
@@ -179,7 +172,8 @@
               <includes>
                 <include>**/*IT.java</include>
               </includes>
-              <forkedProcessTimeoutInSeconds>${integration.test.timeout.seconds}</forkedProcessTimeoutInSeconds>
+              <!-- No fork-level timeout: each test bounds itself with @Timeout, and a
+                   fork-wide cap would kill legitimately slow multi-test runs. -->
             </configuration>
           </plugin>
         </plugins>
