@@ -37,10 +37,15 @@ cd ibmi-mcp-server-lite
 # A single test class or method
 ./mvnw test -Dtest=ParameterProcessorTest
 ./mvnw test -Dtest=ParameterProcessorTest#bindsNamedParameters
+
+# Java pipeline integration tests against a live Mapepire (*IT.java via Failsafe).
+# Needs a configured .env; skipped (not failed) when DB2i_* are missing.
+./mvnw verify -Pintegration-tests
 ```
 
-There is no lint step. Tests are JUnit 5 via Surefire and cover the YAML loader, schema
-generation, parameter binding, and security validation.
+There is no lint step. Unit tests are JUnit 5 via Surefire and cover the YAML loader,
+schema generation, parameter binding, and security validation; live Mapepire integration
+tests (`*IT.java`) run via Failsafe under the `integration-tests` profile.
 
 ## Configure credentials
 

@@ -64,6 +64,22 @@ When the server runs on the same partition as Mapepire, point the source at the 
 name that matches the Mapepire certificate (see below), or regenerate the Mapepire
 certificate to include the name you use.
 
+## JUnit integration tests (live Mapepire)
+
+A Failsafe profile exercises the Java query path (`SourceManager` → `SqlToolHandler`)
+against a live IBM i. This is the Java-level pipeline check; `scripts/smoke-test.py`
+remains the full stdio MCP protocol smoke test.
+
+```bash
+cp .env.example .env   # fill DB2i_HOST / USER / PASS (and PORT if needed)
+./mvnw verify -Pintegration-tests
+```
+
+- `./mvnw test` / `./mvnw package` never run these tests (Surefire excludes `*IT.java`).
+- The profile also auto-activates when `DB2i_HOST` is set in the **process** environment
+  (Maven does not read `.env` itself; the IT helper reads `.env` at test runtime).
+- If credentials are missing, the IT suite is **skipped**, not failed.
+
 ## TLS hostname verification
 
 mapepire-java differs from the Node SDK: `ignore-unauthorized: true` disables

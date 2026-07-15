@@ -29,13 +29,18 @@ feature, and close the corresponding issue if you implement one.
 # Needs .env (cp .env.example .env). Spawns the built jar, so package first.
 python3 scripts/smoke-test.py
 
+# Java pipeline integration tests (SourceManager → SqlToolHandler against live Mapepire).
+# Needs .env; skipped (not failed) when DB2i_* are missing. Does not replace smoke-test.py.
+./mvnw verify -Pintegration-tests
+
 # Run the server / inspect config
 java -jar target/ibmi-mcp-server-lite-0.1.0.jar --tools tools/sample-tools.yaml
 java -jar target/ibmi-mcp-server-lite-0.1.0.jar --tools tools/sample-tools.yaml --list-toolsets
 java -jar target/ibmi-mcp-server-lite-0.1.0.jar --tools tools/sample-tools.yaml --no-reload  # disable hot-reload
 ```
 
-There is no lint step. Tests are JUnit 5 via surefire.
+There is no lint step. Unit tests are JUnit 5 via Surefire; live Mapepire ITs use
+Failsafe under `-Pintegration-tests` (`*IT.java`).
 
 ## Architecture
 
