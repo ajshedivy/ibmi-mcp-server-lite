@@ -99,10 +99,12 @@ Invest in the surrounding ecosystem: fix the TLS hostname-verification gap upstr
 
 > **Why these together:** This capstone milestone comes last because both issues are most valuable once the full feature set exists to validate and deploy. The integration-test-harness should cover the complete pipeline built across M1–M5, so it lands after those features rather than chasing a moving target. The mapepire-tls-hostname-upstream fix is the upstream contribution that retires a documented constraint (the TLS SAN workaround in CLAUDE.md / docs/running-on-ibmi.md) the integration harness would otherwise have to work around — pairing them here keeps the connection-reliability work together and gives interns an external-contribution experience to finish on.
 
+**Implemented:**
+- ✅ [#18](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/18) — JUnit integration-test profile against a live Mapepire (Failsafe `-Pintegration-tests`, `*IT.java`, skipped when `DB2i_*` are missing)
+
 | # | Issue | Difficulty | Estimate |
 |---|---|---|---|
 | [#17](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/17) | [Upstream mapepire-java: skip TLS hostname verification when rejectUnauthorized=false](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/17) | 🔴 advanced | M (3-5 days) |
-| [#18](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/18) | [Add a JUnit integration-test profile that runs against a live Mapepire, gated by env vars](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/18) | 🟡 intermediate | M (3-5 days) |
 
 ---
 

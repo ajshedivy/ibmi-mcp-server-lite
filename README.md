@@ -252,6 +252,10 @@ JSON text block and as MCP `structuredContent`:
 
 - `./mvnw test` — unit tests for the YAML loader, schema generation, parameter binding,
   security validation, and graceful shutdown (no IBM i required).
+- `./mvnw verify -Pintegration-tests` — Java pipeline integration tests
+  (`SourceManager` → `SqlToolHandler`) against a live Mapepire (needs `.env`; skipped,
+  not failed, when `DB2i_*` are missing). See
+  [docs/running-on-ibmi.md](docs/running-on-ibmi.md#junit-integration-tests-live-mapepire).
 - `python3 scripts/smoke-test.py` — full-protocol test against a live IBM i (needs `.env`).
 
 ## Running on IBM i

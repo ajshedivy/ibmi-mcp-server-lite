@@ -6,7 +6,9 @@ sources:
     host: ${DB2i_HOST}
     user: ${DB2i_USER}
     password: ${DB2i_PASS}
-    port: 8076
+    # Falls back to the default Mapepire port (8076) when DB2i_PORT is unset:
+    # unresolved placeholders stay verbatim and non-numeric ports use the default.
+    port: ${DB2i_PORT}
     ignore-unauthorized: true
 
 tools:
