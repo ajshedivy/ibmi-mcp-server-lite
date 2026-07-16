@@ -63,7 +63,11 @@ final class MapepireEnv {
     if (raw == null) {
       return SourceConfig.DEFAULT_MAPEPIRE_PORT;
     }
-    return Integer.parseInt(raw);
+    try {
+      return Integer.parseInt(raw);
+    } catch (NumberFormatException e) {
+      return SourceConfig.DEFAULT_MAPEPIRE_PORT;
+    }
   }
 
   static boolean ignoreUnauthorized() {

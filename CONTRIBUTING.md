@@ -45,7 +45,9 @@ cd ibmi-mcp-server-lite
 
 There is no lint step. Unit tests are JUnit 5 via Surefire and cover the YAML loader,
 schema generation, parameter binding, and security validation; live Mapepire integration
-tests (`*IT.java`) run via Failsafe under the `integration-tests` profile.
+tests must be named `*IT.java` and run Failsafe-only under the `integration-tests`
+profile. Do not name live tests `*IntegrationTest.java` or similar — Surefire will treat
+them as unit tests.
 
 ## Configure credentials
 

@@ -61,18 +61,7 @@ class SqlToolHandlerIT {
     // (no QueryOptions) that parameterized tools never hit.
     CallToolResult result = call("system_status", Map.of());
 
-    assertFalse(result.isError());
-    Map<String, Object> output = structured(result);
-    assertEquals(Boolean.TRUE, output.get("success"));
-    assertInstanceOf(List.class, output.get("data"));
-
-    @SuppressWarnings("unchecked")
-    Map<String, Object> metadata = (Map<String, Object>) output.get("metadata");
-    assertNotNull(metadata);
-    assertNotNull(metadata.get("rowCount"), "metadata.rowCount required");
-    assertNotNull(metadata.get("executionTime"), "metadata.executionTime required");
-
-    assertTextBlockParses(result);
+    assertSuccessfulSqlOutput(result);
   }
 
   @Test
@@ -80,18 +69,7 @@ class SqlToolHandlerIT {
   void activeJobInfoReturnsSuccessWithMetadata() {
     CallToolResult result = call("active_job_info", Map.of("limit", 3));
 
-    assertFalse(result.isError());
-    Map<String, Object> output = structured(result);
-    assertEquals(Boolean.TRUE, output.get("success"));
-    assertInstanceOf(List.class, output.get("data"));
-
-    @SuppressWarnings("unchecked")
-    Map<String, Object> metadata = (Map<String, Object>) output.get("metadata");
-    assertNotNull(metadata);
-    assertNotNull(metadata.get("rowCount"), "metadata.rowCount required");
-    assertNotNull(metadata.get("executionTime"), "metadata.executionTime required");
-
-    assertTextBlockParses(result);
+    assertSuccessfulSqlOutput(result);
   }
 
   @Test
@@ -142,6 +120,21 @@ class SqlToolHandlerIT {
   private static Map<String, Object> structured(CallToolResult result) {
     assertNotNull(result.structuredContent(), "structuredContent required");
     return (Map<String, Object>) result.structuredContent();
+  }
+
+  private static void assertSuccessfulSqlOutput(CallToolResult result) {
+    assertFalse(result.isError());
+    Map<String, Object> output = structured(result);
+    assertEquals(Boolean.TRUE, output.get("success"));
+    assertInstanceOf(List.class, output.get("data"));
+
+    @SuppressWarnings("unchecked")
+    Map<String, Object> metadata = (Map<String, Object>) output.get("metadata");
+    assertNotNull(metadata);
+    assertNotNull(metadata.get("rowCount"), "metadata.rowCount required");
+    assertNotNull(metadata.get("executionTime"), "metadata.executionTime required");
+
+    assertTextBlockParses(result);
   }
 
   private static String firstTextBlock(CallToolResult result) {
