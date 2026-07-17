@@ -22,7 +22,7 @@ sources:
     user: ${DB2i_USER}        # required
     password: ${DB2i_PASS}    # required
     port: 8076                # optional, default 8076
-    ignore-unauthorized: true # optional, default false — skip TLS *chain* validation
+    ignore-unauthorized: true # optional, default false — skip TLS chain + hostname verification (mapepire-sdk 0.1.3+)
     max-size: 10              # optional, default 10 — max SqlJobs in the connection pool
     starting-size: 2          # optional, default 2 — jobs created at pool init
     jdbc-options:             # optional — forwarded to mapepire JDBC driver
@@ -32,9 +32,6 @@ sources:
 
 > `DB2i_JDBC_OPTIONS` env var (semicolon-separated `key=value;...`) shallow-merges over
 > `jdbc-options` per source — env wins on key collisions. See `.env.example`.
-
-> mapepire-java still verifies the TLS **hostname** against the server certificate's SAN
-> even with `ignore-unauthorized: true`. Use a `host` that appears in the certificate.
 
 ## `tools` — parameterized SQL
 

@@ -84,21 +84,18 @@ cp .env.example .env   # fill DB2i_HOST / USER / PASS (and PORT if needed)
 
 ## TLS hostname verification
 
-mapepire-java differs from the Node SDK: `ignore-unauthorized: true` disables
-certificate-*chain* validation but **not hostname verification** (the underlying
-Java-WebSocket library enables HTTPS endpoint identification unconditionally). The
-connection fails with `No subject alternative DNS name matching <host> found` when the
-host you connect to isn't in the certificate's SAN.
+As of mapepire-sdk **0.1.3**, `ignore-unauthorized: true` relaxes both certificate-*chain*
+validation and TLS hostname (SAN) verification — matching the Node.js SDK's
+`rejectUnauthorized` / `ignoreUnauthorized` semantics. With the default
+`ignore-unauthorized: false`, hostname verification remains fully enforced.
 
 Practical consequences:
 
-- Connect using a hostname that appears in the Mapepire server certificate
+- Self-signed or SAN-mismatched Mapepire certs work when you set
+  `ignore-unauthorized: true` (DNS aliases, loopback names not in the cert SAN, etc.).
+- Leave `ignore-unauthorized: false` (the default) when the connect host matches a name
+  in the Mapepire server certificate
   (`openssl s_client -connect host:8076 | openssl x509 -noout -ext subjectAltName`).
-- DNS aliases of the same system fail even with `ignore-unauthorized: true`
-  (e.g. a cert for `common1.frankeni.com` rejects `common1.iinthecloud.com`).
-- Fixing this properly means overriding `onSetSSLParameters` in mapepire-java's
-  WebSocket client when `rejectUnauthorized=false` — a good upstream contribution
-  (see the roadmap).
 
 ## RPM packaging
 

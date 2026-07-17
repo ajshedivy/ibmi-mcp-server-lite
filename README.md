@@ -16,7 +16,7 @@ against Db2 for i through [Mapepire](https://mapepire-ibmi.github.io/).
 Built on:
 
 - [MCP Java SDK](https://github.com/modelcontextprotocol/java-sdk) 1.1.3 (`mcp-core` + `mcp-json-jackson2`)
-- [mapepire-java](https://github.com/Mapepire-IBMi/mapepire-java) 0.1.2
+- [mapepire-java](https://github.com/Mapepire-IBMi/mapepire-java) 0.1.3
 - Java 17, Maven (wrapper included)
 
 ## Quickstart
@@ -39,9 +39,9 @@ java -jar target/ibmi-mcp-server-lite-0.1.0.jar --tools tools/sample-tools.yaml 
 python3 scripts/smoke-test.py
 ```
 
-> **TLS note:** unlike the Node.js SDK, mapepire-java verifies the TLS *hostname* even with
-> `ignore-unauthorized: true` (only certificate-chain trust is skipped). `DB2i_HOST` must
-> match a name in the Mapepire server certificate's Subject Alternative Name. See
+> **TLS note:** with mapepire-sdk 0.1.3+, `ignore-unauthorized: true` relaxes both
+> certificate-chain trust and TLS hostname (SAN) verification. Leave it `false` (the
+> default) when `DB2i_HOST` matches a name in the Mapepire server certificate. See
 > [docs/running-on-ibmi.md](docs/running-on-ibmi.md#tls-hostname-verification).
 
 ### HTTP transport (daemon mode)
