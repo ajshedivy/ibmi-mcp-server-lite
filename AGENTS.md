@@ -87,9 +87,9 @@ Tool results mirror the reference server's `StandardSqlToolOutput` shape
 - **Java 17 is the floor** (MCP SDK class-file requirement) — and IBM i's yum repo only
   ships OpenJDK 11. On-box runtime options and PASE pitfalls (`QIBM_*` stdio env vars,
   failed AIX-JDK experiments) are documented in `docs/running-on-ibmi.md`.
-- **mapepire-java verifies TLS hostnames even with `ignore-unauthorized: true`** (only
-  cert-chain trust is skipped). `DB2i_HOST` must match a SAN in the Mapepire server
-  certificate or connections fail.
+- **`ignore-unauthorized: true` relaxes TLS chain and hostname verification** (mapepire-sdk
+  0.1.3+). With the default `false`, `DB2i_HOST` must still match a SAN in the Mapepire
+  server certificate. See `docs/running-on-ibmi.md`.
 - **`.github/workflows/rpm-ibmi.yml` is a complete but gated RPM pipeline**, guarded by the
   `ENABLE_IBMI_RPM_BUILD` repo variable (off by default). It builds a real `yum`-installable
   RPM on an IBM i partition using IBM Technology for Java 17 (5770-JV1 option 20); the spec,
