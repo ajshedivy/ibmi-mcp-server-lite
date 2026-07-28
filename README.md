@@ -31,9 +31,9 @@ Prerequisites: **Java 17+** on the machine running the server, and an IBM i with
 # 2. Configure credentials used by ${VAR} interpolation in the tools YAML
 cp .env.example .env   # then edit DB2i_HOST / DB2i_USER / DB2i_PASS
 
-# 3. Sanity check: list the toolsets defined in the sample YAML
-java -jar target/ibmi-mcp-server-lite-0.1.0.jar --tools tools/sample-tools.yaml --list-toolsets
-#    --tools also accepts a directory of YAML files or a glob (see docs/yaml-tools-reference.md)
+# 3. Sanity check: list the toolsets defined in the vendored packs
+java -jar target/ibmi-mcp-server-lite-0.1.0.jar --tools tools --list-toolsets
+#    Requires YAML_ALLOW_DUPLICATE_SOURCES=true (set in .env.example). See tools/README.md.
 
 # 4. End-to-end smoke test over real stdio JSON-RPC (initialize → tools/list → tools/call)
 python3 scripts/smoke-test.py
@@ -51,7 +51,7 @@ of per-client stdio:
 
 ```bash
 java -jar target/ibmi-mcp-server-lite-0.1.0.jar \
-  --tools tools/sample-tools.yaml \
+  --tools tools \
   --transport http
 ```
 
@@ -81,7 +81,7 @@ Any MCP client that speaks stdio works. Example configuration (Claude Desktop /
       "command": "java",
       "args": [
         "-jar", "/path/to/ibmi-mcp-server-lite-0.1.0.jar",
-        "--tools", "/path/to/tools/sample-tools.yaml"
+        "--tools", "/path/to/tools"
       ],
       "env": {
         "DB2i_HOST": "myibmi.example.com",
@@ -143,7 +143,7 @@ text-to-SQL workflows. The lite server registers the same built-in when enabled:
 
 ```bash
 # CLI (wins over env)
-java -jar target/ibmi-mcp-server-lite-0.1.0.jar --tools tools/sample-tools.yaml --execute-sql
+java -jar target/ibmi-mcp-server-lite-0.1.0.jar --tools tools --execute-sql
 
 # Or via .env / process env
 IBMI_ENABLE_EXECUTE_SQL=true
@@ -173,13 +173,13 @@ connected clients re-fetch `tools/list`. Reload re-runs the same merge path as s
 
 ```bash
 # Start the server and leave it running (logs go to stderr)
-java -jar target/ibmi-mcp-server-lite-0.1.0.jar --tools tools/sample-tools.yaml
+java -jar target/ibmi-mcp-server-lite-0.1.0.jar --tools tools
 ```
 
-Edit `tools/sample-tools.yaml` in your editor and save. On stderr you should see:
+Edit a YAML file under `tools/` in your editor and save. On stderr you should see:
 
 ```
-YAML file(s) changed: .../tools/sample-tools.yaml
+YAML file(s) changed: .../tools/performance/performance.yaml
 Reloaded tool 'my_new_tool' ...
 YAML reload applied: 0 removed, 1 added
 ```
@@ -188,7 +188,7 @@ YAML reload applied: 0 removed, 1 added
 set is kept:
 
 ```bash
-java -jar target/ibmi-mcp-server-lite-0.1.0.jar --tools tools/sample-tools.yaml --list-tools
+java -jar target/ibmi-mcp-server-lite-0.1.0.jar --tools tools --list-tools
 ```
 
 **Disable hot-reload** with `--no-reload` or `YAML_AUTO_RELOAD=false` in `.env`.
