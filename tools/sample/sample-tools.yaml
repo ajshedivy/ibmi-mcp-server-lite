@@ -1,6 +1,6 @@
-# Sample YAML tool configuration for ibmi-mcp-server-lite.
-# Format-compatible with the IBM i MCP Server YAML tool schema:
-# https://github.com/IBM/ibmi-mcp-server
+# Lite-only discovery tools (not present in the Node reference packs).
+# Performance tools live in ../performance/performance.yaml — do not reintroduce
+# system_status / active_job_info here or directory merge will fail.
 sources:
   ibmi-system:
     host: ${DB2i_HOST}
@@ -12,35 +12,6 @@ sources:
     ignore-unauthorized: true
 
 tools:
-  system_status:
-    source: ibmi-system
-    description: "Overall system performance statistics with CPU, memory, and I/O metrics"
-    parameters: []
-    statement: |
-      SELECT * FROM TABLE(QSYS2.SYSTEM_STATUS(RESET_STATISTICS=>'YES',DETAILED_INFO=>'ALL')) X
-    annotations:
-      readOnlyHint: true
-      title: "System Status"
-
-  active_job_info:
-    source: ibmi-system
-    description: "Find the top CPU consumers in the QUSRWRK and QSYSWRK subsystems"
-    parameters:
-      - name: limit
-        type: integer
-        default: 10
-        min: 1
-        max: 100
-        description: "Number of top CPU consumers to return"
-    statement: |
-      SELECT CPU_TIME, A.* FROM
-      TABLE(QSYS2.ACTIVE_JOB_INFO(SUBSYSTEM_LIST_FILTER => 'QUSRWRK,QSYSWRK')) A
-      ORDER BY CPU_TIME DESC
-      FETCH FIRST :limit ROWS ONLY
-    annotations:
-      readOnlyHint: true
-      title: "Active Job Info"
-
   list_user_libraries:
     source: ibmi-system
     description: "List libraries on the system whose name matches a pattern"
@@ -74,13 +45,6 @@ tools:
       title: "Fetch All Libraries"
 
 toolsets:
-  performance:
-    title: "Performance"
-    description: "System performance monitoring tools"
-    tools:
-      - system_status
-      - active_job_info
-
   discovery:
     title: "Discovery"
     description: "Object and library discovery tools"
