@@ -11,4 +11,3 @@ updates:
       - "dependencies"
       - "maven"
     open-pull-requests-limit: 5
-    versioning-strategy: auto
