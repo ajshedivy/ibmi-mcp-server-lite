@@ -169,5 +169,6 @@ A few things that will come up in review:
   (e.g. `feat: connection pooling`, `docs: fix roadmap link`). See `git log` for the
   established style.
 - Make sure `./mvnw package` is green before opening a PR.
+- Dependabot PRs must pass Build (`./mvnw -B package`) before merge.
 - Working from the [roadmap](ROADMAP.md)? Reference its issue in your PR (e.g. `Closes #12`)
   so the milestone updates automatically when it merges.
