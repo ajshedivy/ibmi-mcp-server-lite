@@ -28,7 +28,8 @@ import com.ibm.ibmi.mcp.util.ShutdownGuard;
  * Entry point. Usage:
  *
  * <pre>
- * java -jar ibmi-mcp-server-lite.jar --tools ./tools/sample-tools.yaml [--toolsets a,b]
+ * java -jar ibmi-mcp-server-lite.jar --tools ./tools [--toolsets a,b]
+ * java -jar ibmi-mcp-server-lite.jar --tools ./tools/sample/sample-tools.yaml [--toolsets a,b]
  * java -jar ibmi-mcp-server-lite.jar --tools ./tools/ [--toolsets a,b] --transport http
  * </pre>
  *

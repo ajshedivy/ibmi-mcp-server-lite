@@ -26,7 +26,7 @@ from fastmcp.client.transports import StdioTransport
 def _discover_lite_root() -> Path:
     """Find the ibmi-mcp-server-lite root by walking up from this file."""
     for parent in Path(__file__).resolve().parents:
-        if (parent / "pom.xml").is_file() and (parent / "tools" / "sample-tools.yaml").is_file():
+        if (parent / "pom.xml").is_file() and (parent / "tools" / "sample" / "sample-tools.yaml").is_file():
             return parent
     # Fallback: <root>/sandbox/mcp-server-test/src/ibmi_mcp_client/config.py
     return Path(__file__).resolve().parents[4]
@@ -37,7 +37,7 @@ SERVER_JAR = Path(
     os.environ.get("IBMI_MCP_JAR")
     or LITE_ROOT / "target" / "ibmi-mcp-server-lite-0.1.0.jar"
 )
-TOOLS_YAML = Path(os.environ.get("IBMI_MCP_TOOLS") or LITE_ROOT / "tools" / "sample-tools.yaml")
+TOOLS_YAML = Path(os.environ.get("IBMI_MCP_TOOLS") or LITE_ROOT / "tools" / "sample" / "sample-tools.yaml")
 ENV_FILE = Path(os.environ.get("IBMI_MCP_ENV_FILE") or LITE_ROOT / ".env")
 
 

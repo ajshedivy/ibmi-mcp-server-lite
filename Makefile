@@ -23,7 +23,7 @@ install:
 	install -m 755 -D packaging/ibmi/$(PKG).sh $(BIN_DIR)/$(PKG)
 	install -m 644 -D target/$(PKG)-$(VERSION).jar $(LIB_DIR)/$(PKG).jar
 	install -m 644 -D LICENSE $(LIB_DIR)/LICENSE 2>/dev/null || true
-	install -m 644 -D tools/sample-tools.yaml $(ETC_DIR)/tools.yaml
+	install -m 644 -D tools/sample/sample-tools.yaml $(ETC_DIR)/tools.yaml
 	install -m 644 -D packaging/ibmi/service-commander-def.yaml $(SC_DIR)/$(PKG).yaml
 
 .PHONY: all install

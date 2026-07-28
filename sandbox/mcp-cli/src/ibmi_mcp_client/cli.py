@@ -140,7 +140,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     common.add_argument(
         "-t", "--tools", metavar="PATH",
-        help="tools YAML for the server to load (default: sample-tools.yaml)",
+        help="tools YAML for the server to load (default: tools/sample/sample-tools.yaml)",
     )
 
     sub = parser.add_subparsers(dest="command", required=True)
