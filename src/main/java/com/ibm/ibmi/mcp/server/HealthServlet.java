@@ -13,9 +13,13 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
 /**
- * Unauthenticated liveness/readiness probe at {@code GET /healthz}.
+ * Unauthenticated liveness probe at {@code GET /healthz}.
  * Always returns HTTP 200; operators should inspect body {@code status}
  * ({@code ok} vs {@code degraded}).
+ *
+ * <p>Reflects cached pool lifecycle after connect attempts — does not probe
+ * Mapepire. Empty {@code pools} means no source has been used yet (still
+ * {@code ok} even if Mapepire is down).
  */
 public final class HealthServlet extends HttpServlet {
 

@@ -67,6 +67,11 @@ Defaults: bind `0.0.0.0:3010`, MCP endpoint `/mcp`. Override via flags or enviro
 CLI flags win over environment variables. The HTTP transport is **unauthenticated** for
 now (no auth or CORS — see roadmap). `GET /healthz` returns JSON pool health
 (`status` is `ok` or `degraded`; HTTP status is always 200 — probes should read the body).
+It reflects **cached pool state** after a connect attempt (or successful query) — it does
+**not** probe Mapepire. Until a tool has touched a source, `pools` is `{}` and status stays
+`ok` even if Mapepire is down. After a failed connect or eviction, `unhealthy` stays sticky
+while a reconnect is in progress (`connecting: true`) so status remains `degraded` until
+init succeeds or fails again.
 YAML hot-reload (`YAML_AUTO_RELOAD`) works in HTTP mode but is best-effort when multiple
 clients are connected concurrently.
 

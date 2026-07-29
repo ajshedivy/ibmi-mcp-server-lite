@@ -104,6 +104,32 @@ class HttpTransportIntegrationTest {
 
   @Test
   @Timeout(15)
+  void httpHealthzStaysDegradedWhileReconnectingAfterUnhealthy(@TempDir Path tempDir)
+      throws Exception {
+    String mcpUrl = startServer(tempDir);
+    String healthUrl = mcpUrl.replace(TransportConfig.DEFAULT_ENDPOINT, "/healthz");
+
+    // Sticky reconnect: unhealthy + connecting (as markConnecting preserves after eviction)
+    handle.sources().putHealth(
+        "ibmi",
+        new SourceManager.PoolHealth(false, true, "unhealthy", Instant.now()));
+
+    HttpClient client = HttpClient.newHttpClient();
+    HttpRequest request = HttpRequest.newBuilder()
+        .uri(URI.create(healthUrl))
+        .GET()
+        .build();
+    HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+    assertEquals(200, response.statusCode(), response.body());
+    JsonNode body = MAPPER.readTree(response.body());
+    assertEquals("degraded", body.path("status").asText());
+    assertEquals("unhealthy", body.path("pools").path("ibmi").path("healthStatus").asText());
+    assertTrue(body.path("pools").path("ibmi").path("connecting").asBoolean());
+  }
+
+  @Test
+  @Timeout(15)
   void httpInitializeAndToolsList(@TempDir Path tempDir) throws Exception {
     String baseUrl = startServer(tempDir);
     HttpClient client = HttpClient.newHttpClient();

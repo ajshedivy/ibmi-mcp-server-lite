@@ -30,6 +30,9 @@ public final class SourceManager implements AutoCloseable {
   /**
    * Cached pool health for probes. Mapepire's Java {@link Pool} does not expose
    * initialized/connecting/health fields, so we track them here.
+   *
+   * <p>{@code lastActivityAt} is updated on pool lifecycle events (connect / fail /
+   * evict) and on successful queries.
    */
   public record PoolHealth(
       boolean initialized,
@@ -82,7 +85,7 @@ public final class SourceManager implements AutoCloseable {
     if (source == null) {
       throw new IllegalArgumentException("Unknown source: " + sourceName);
     }
-    health.put(sourceName, new PoolHealth(false, true, "unknown", Instant.now()));
+    markConnecting(sourceName);
     PoolOptions options = poolOptionsFor(source);
     Pool pool = new Pool(options);
     Object libs = source.jdbcOptions().get("libraries");
@@ -126,8 +129,24 @@ public final class SourceManager implements AutoCloseable {
   }
 
   /**
+   * Records a successful query against {@code sourceName}. Updates
+   * {@code lastActivityAt} and marks the pool healthy (Node SourceManager parity).
+   */
+  public synchronized void recordActivity(String sourceName) {
+    PoolHealth current = health.get(sourceName);
+    if (current == null) {
+      return;
+    }
+    health.put(sourceName, new PoolHealth(
+        current.initialized(),
+        current.connecting(),
+        "healthy",
+        Instant.now()));
+  }
+
+  /**
    * Lightweight health summary for sources that have attempted a connection. Suitable for
-   * {@code GET /healthz}.
+   * {@code GET /healthz}. Cached lifecycle state only — does not probe Mapepire.
    */
   public Map<String, Map<String, Object>> getHealthSummary() {
     Map<String, Map<String, Object>> summary = new LinkedHashMap<>();
@@ -140,6 +159,19 @@ public final class SourceManager implements AutoCloseable {
   /** Test hook to inject cached health without connecting to Mapepire. */
   public void putHealth(String sourceName, PoolHealth poolHealth) {
     health.put(sourceName, poolHealth);
+  }
+
+  /**
+   * Marks a source as connecting. Keeps {@code unhealthy} sticky across reconnect so
+   * {@code /healthz} stays degraded until init succeeds or fails; first-time connect
+   * uses {@code unknown}.
+   */
+  void markConnecting(String sourceName) {
+    PoolHealth previous = health.get(sourceName);
+    String status = previous != null && "unhealthy".equals(previous.healthStatus())
+        ? "unhealthy"
+        : "unknown";
+    health.put(sourceName, new PoolHealth(false, true, status, Instant.now()));
   }
 
   static PoolOptions poolOptionsFor(SourceConfig source) {

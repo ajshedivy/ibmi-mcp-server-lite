@@ -172,6 +172,54 @@ class SourceManagerTest {
     assertEquals(false, summary.get("bad").get("initialized"));
   }
 
+  @Test
+  void markConnecting_firstConnectUsesUnknown() {
+    SourceManager manager = new SourceManager(Map.of());
+    manager.markConnecting("ibmi");
+
+    Map<String, Object> pool = manager.getHealthSummary().get("ibmi");
+    assertEquals("unknown", pool.get("healthStatus"));
+    assertEquals(true, pool.get("connecting"));
+    assertEquals(false, pool.get("initialized"));
+  }
+
+  @Test
+  void markConnecting_keepsUnhealthyStickyDuringReconnect() {
+    Instant prior = Instant.parse("2026-07-29T12:00:00Z");
+    SourceManager manager = new SourceManager(Map.of());
+    manager.putHealth("ibmi", new SourceManager.PoolHealth(false, false, "unhealthy", prior));
+
+    manager.markConnecting("ibmi");
+
+    Map<String, Object> pool = manager.getHealthSummary().get("ibmi");
+    assertEquals("unhealthy", pool.get("healthStatus"));
+    assertEquals(true, pool.get("connecting"));
+    assertEquals(false, pool.get("initialized"));
+    assertTrue(((String) pool.get("lastActivityAt")).compareTo(prior.toString()) >= 0);
+  }
+
+  @Test
+  void recordActivity_updatesTimestampAndMarksHealthy() throws InterruptedException {
+    Instant prior = Instant.parse("2026-07-29T12:00:00Z");
+    SourceManager manager = new SourceManager(Map.of());
+    manager.putHealth("ibmi", new SourceManager.PoolHealth(true, false, "healthy", prior));
+
+    Thread.sleep(2);
+    manager.recordActivity("ibmi");
+
+    Map<String, Object> pool = manager.getHealthSummary().get("ibmi");
+    assertEquals("healthy", pool.get("healthStatus"));
+    assertEquals(true, pool.get("initialized"));
+    assertTrue(((String) pool.get("lastActivityAt")).compareTo(prior.toString()) > 0);
+  }
+
+  @Test
+  void recordActivity_noopWhenSourceUnknown() {
+    SourceManager manager = new SourceManager(Map.of());
+    manager.recordActivity("missing");
+    assertEquals(Map.of(), manager.getHealthSummary());
+  }
+
   @SuppressWarnings("unchecked")
   private static void registerPool(SourceManager manager, String name, Pool pool) throws Exception {
     Field poolsField = SourceManager.class.getDeclaredField("pools");
