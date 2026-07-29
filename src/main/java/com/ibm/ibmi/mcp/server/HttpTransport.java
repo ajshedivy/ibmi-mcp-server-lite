@@ -7,10 +7,13 @@ import org.eclipse.jetty.ee10.servlet.ServletHolder;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.ServerConnector;
 
+import com.ibm.ibmi.mcp.mapepire.SourceManager;
+
 import io.modelcontextprotocol.server.transport.HttpServletStreamableServerTransportProvider;
 
 /**
- * Boots an embedded Jetty instance that hosts the MCP Streamable HTTP servlet transport.
+ * Boots an embedded Jetty instance that hosts the MCP Streamable HTTP servlet transport
+ * and an unauthenticated {@code GET /healthz} probe.
  */
 public final class HttpTransport {
 
@@ -18,11 +21,12 @@ public final class HttpTransport {
 
   /**
    * Binds Jetty to {@code host}:{@code port}, mounts {@code servlet} at {@code endpointPath},
-   * and starts the server. Use port {@code 0} for an ephemeral port (tests only); read the
-   * bound port from {@link #localPort(Server)} after start.
+   * mounts {@code GET /healthz}, and starts the server. Use port {@code 0} for an ephemeral
+   * port (tests only); read the bound port from {@link #localPort(Server)} after start.
    */
   public static Server start(
       HttpServletStreamableServerTransportProvider servlet,
+      SourceManager sources,
       String host,
       int port,
       String endpointPath) throws Exception {
@@ -38,6 +42,7 @@ public final class HttpTransport {
     ServletHolder holder = new ServletHolder(servlet);
     holder.setAsyncSupported(true);
     context.addServlet(holder, endpointPath);
+    context.addServlet(new ServletHolder(new HealthServlet(sources)), "/healthz");
 
     server.setHandler(context);
     try {
@@ -73,4 +78,5 @@ public final class HttpTransport {
     }
     return false;
   }
+
 }

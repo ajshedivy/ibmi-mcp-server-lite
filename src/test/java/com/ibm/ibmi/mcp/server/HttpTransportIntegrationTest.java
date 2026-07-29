@@ -11,6 +11,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
@@ -26,6 +27,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ibm.ibmi.mcp.config.ToolsConfig;
 import com.ibm.ibmi.mcp.config.YamlConfigLoader;
+import com.ibm.ibmi.mcp.mapepire.SourceManager;
 
 class HttpTransportIntegrationTest {
 
@@ -53,6 +55,51 @@ class HttpTransportIntegrationTest {
       handle.close();
       handle = null;
     }
+  }
+
+  @Test
+  @Timeout(15)
+  void httpHealthzReturnsOkWithEmptyPools(@TempDir Path tempDir) throws Exception {
+    String mcpUrl = startServer(tempDir);
+    String healthUrl = mcpUrl.replace(TransportConfig.DEFAULT_ENDPOINT, "/healthz");
+    HttpClient client = HttpClient.newHttpClient();
+
+    HttpRequest request = HttpRequest.newBuilder()
+        .uri(URI.create(healthUrl))
+        .GET()
+        .build();
+    HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+    assertEquals(200, response.statusCode(), response.body());
+    JsonNode body = MAPPER.readTree(response.body());
+    assertEquals("ok", body.path("status").asText());
+    assertTrue(body.path("timestamp").isTextual());
+    assertFalse(body.path("timestamp").asText().isBlank());
+    assertTrue(body.path("pools").isObject());
+    assertEquals(0, body.path("pools").size());
+  }
+
+  @Test
+  @Timeout(15)
+  void httpHealthzReportsDegradedWhenPoolUnhealthy(@TempDir Path tempDir) throws Exception {
+    String mcpUrl = startServer(tempDir);
+    String healthUrl = mcpUrl.replace(TransportConfig.DEFAULT_ENDPOINT, "/healthz");
+
+    handle.sources().putHealth(
+        "ibmi",
+        new SourceManager.PoolHealth(false, false, "unhealthy", Instant.now()));
+
+    HttpClient client = HttpClient.newHttpClient();
+    HttpRequest request = HttpRequest.newBuilder()
+        .uri(URI.create(healthUrl))
+        .GET()
+        .build();
+    HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+    assertEquals(200, response.statusCode(), response.body());
+    JsonNode body = MAPPER.readTree(response.body());
+    assertEquals("degraded", body.path("status").asText());
+    assertEquals("unhealthy", body.path("pools").path("ibmi").path("healthStatus").asText());
   }
 
   @Test

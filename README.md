@@ -65,9 +65,10 @@ Defaults: bind `0.0.0.0:3010`, MCP endpoint `/mcp`. Override via flags or enviro
 | `--http-endpoint` | `MCP_HTTP_ENDPOINT_PATH` | `/mcp` |
 
 CLI flags win over environment variables. The HTTP transport is **unauthenticated** for
-now (no auth, CORS, or `/healthz` — see roadmap for planned additions). YAML hot-reload
-(`YAML_AUTO_RELOAD`) works in HTTP mode but is best-effort when multiple clients are
-connected concurrently.
+now (no auth or CORS — see roadmap). `GET /healthz` returns JSON pool health
+(`status` is `ok` or `degraded`; HTTP status is always 200 — probes should read the body).
+YAML hot-reload (`YAML_AUTO_RELOAD`) works in HTTP mode but is best-effort when multiple
+clients are connected concurrently.
 
 ### Using it from an MCP client
 
@@ -269,7 +270,7 @@ anywhere else against an IBM i also works today, as the smoke test demonstrates.
 ## What's deliberately missing
 
 This MVP implements a faithful subset of the reference server. Auth/CORS on HTTP,
-`GET /healthz`, the full SQL security parser, and more are sequenced into milestones —
+the full SQL security parser, and more are sequenced into milestones —
 each tracked as a GitHub issue with pointers into the reference implementation — in the
 [**roadmap**](ROADMAP.md)
 ([milestones](https://github.com/ajshedivy/ibmi-mcp-server-lite/milestones) ·
