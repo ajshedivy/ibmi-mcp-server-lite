@@ -33,7 +33,7 @@ import io.modelcontextprotocol.spec.McpSchema.TextContent;
  */
 class SqlToolHandlerIT {
 
-  private static final Path SAMPLE_TOOLS = Path.of("tools/sample-tools.yaml");
+  private static final Path SAMPLE_TOOLS = Path.of("tools/sample/sample-tools.yaml");
   private static final ObjectMapper MAPPER = new ObjectMapper();
 
   private SourceManager sources;
@@ -111,7 +111,7 @@ class SqlToolHandlerIT {
 
   private CallToolResult call(String toolName, Map<String, Object> arguments) {
     SqlToolConfig tool = config.tools().get(toolName);
-    assertNotNull(tool, "tool not found in sample-tools.yaml: " + toolName);
+    assertNotNull(tool, "tool not found in sample tools YAML: " + toolName);
     SqlToolHandler handler = new SqlToolHandler(tool, sources, MAPPER);
     return handler.apply(null, new CallToolRequest(toolName, arguments, null));
   }

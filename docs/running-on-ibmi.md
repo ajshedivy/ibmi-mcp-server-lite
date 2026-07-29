@@ -46,7 +46,7 @@ Certified Edition 17, or wait for a Java 17+ RPM in IBM's yum repo.
 
 ```bash
 # from your workstation
-scp target/ibmi-mcp-server-lite-0.1.0.jar tools/sample-tools.yaml user@myibmi:ibmi-mcp-server-lite/
+scp target/ibmi-mcp-server-lite-0.1.0.jar tools/sample/sample-tools.yaml user@myibmi:ibmi-mcp-server-lite/
 
 # on the IBM i (ssh user@myibmi), once a Java 17 runtime exists:
 cd ~/ibmi-mcp-server-lite
@@ -54,6 +54,9 @@ QIBM_JAVA_STDIO_CONVERT=N QIBM_PASE_DESCRIPTOR_STDIO=B \
 QIBM_USE_DESCRIPTOR_STDIO=Y QIBM_MULTI_THREADED=Y \
 $JAVA17_HOME/bin/java -jar ibmi-mcp-server-lite-0.1.0.jar --tools sample-tools.yaml
 ```
+
+(For the full vendored pack tree, copy the whole `tools/` directory and run with
+`--tools tools` plus `YAML_ALLOW_DUPLICATE_SOURCES=true` — see `tools/README.md`.)
 
 The `QIBM_*` variables are the standard PASE/Java stdio-descriptor settings (the same set
 the Mapepire launcher uses). They matter here because **MCP stdio framing runs over

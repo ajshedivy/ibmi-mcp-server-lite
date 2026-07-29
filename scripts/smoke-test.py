@@ -21,7 +21,7 @@ if enable_execute_sql:
     args.remove("--execute-sql")
 
 JAR = args[0] if len(args) > 0 else "target/ibmi-mcp-server-lite-0.1.0.jar"
-TOOLS = args[1] if len(args) > 1 else "tools/sample-tools.yaml"
+TOOLS = args[1] if len(args) > 1 else "tools/sample/sample-tools.yaml"
 
 server_cmd = ["java", "-jar", JAR, "--tools", TOOLS, "--transport", "stdio", "--no-reload"]
 if enable_execute_sql:

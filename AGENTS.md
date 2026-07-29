@@ -34,9 +34,9 @@ python3 scripts/smoke-test.py
 ./mvnw verify -Pintegration-tests
 
 # Run the server / inspect config
-java -jar target/ibmi-mcp-server-lite-0.1.0.jar --tools tools/sample-tools.yaml
-java -jar target/ibmi-mcp-server-lite-0.1.0.jar --tools tools/sample-tools.yaml --list-toolsets
-java -jar target/ibmi-mcp-server-lite-0.1.0.jar --tools tools/sample-tools.yaml --no-reload  # disable hot-reload
+java -jar target/ibmi-mcp-server-lite-0.1.0.jar --tools tools
+java -jar target/ibmi-mcp-server-lite-0.1.0.jar --tools tools --list-toolsets
+java -jar target/ibmi-mcp-server-lite-0.1.0.jar --tools tools --no-reload  # disable hot-reload
 ```
 
 There is no lint step. Unit tests are JUnit 5 via Surefire; live Mapepire ITs use

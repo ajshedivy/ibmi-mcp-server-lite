@@ -42,7 +42,7 @@ uv run ibmi-mcp list --tools path/to/other-tools.yaml # load a different tools f
 ```
 
 - `--tools/-t PATH` points the server at a different tools YAML (default:
-  the lite project's `tools/sample-tools.yaml`).
+  the lite project's `tools/sample/sample-tools.yaml`).
 - Each `list` / `call` spawns a **new** server process — handy for one-shot tests, but
   not for exercising **hot-reload**. To test reload, run the jar directly and leave it
   running while editing the YAML (see the main [README](../../README.md#hot-reloading-tools-yaml)).
@@ -63,5 +63,5 @@ Paths are auto-discovered from the surrounding lite checkout. Override with env 
 |---|---|
 | `IBMI_MCP_HOME` | auto-detected lite project root |
 | `IBMI_MCP_JAR` | `$IBMI_MCP_HOME/target/ibmi-mcp-server-lite-0.1.0.jar` |
-| `IBMI_MCP_TOOLS` | `$IBMI_MCP_HOME/tools/sample-tools.yaml` (or `--tools`) |
+| `IBMI_MCP_TOOLS` | `$IBMI_MCP_HOME/tools/sample/sample-tools.yaml` (or `--tools`) |
 | `IBMI_MCP_ENV_FILE` | `$IBMI_MCP_HOME/.env` |

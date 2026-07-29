@@ -72,14 +72,14 @@ is tracked.
 
 ```bash
 # Inspect config without connecting to IBM i
-java -jar target/ibmi-mcp-server-lite-0.1.0.jar --tools tools/sample-tools.yaml --list-toolsets
+java -jar target/ibmi-mcp-server-lite-0.1.0.jar --tools tools --list-toolsets
 
 # Run the server (stdio JSON-RPC transport — it waits for an MCP client on stdin).
 # Hot-reload is on by default: edit the YAML and save to update tools live.
-java -jar target/ibmi-mcp-server-lite-0.1.0.jar --tools tools/sample-tools.yaml
+java -jar target/ibmi-mcp-server-lite-0.1.0.jar --tools tools
 
 # Disable hot-reload
-java -jar target/ibmi-mcp-server-lite-0.1.0.jar --tools tools/sample-tools.yaml --no-reload
+java -jar target/ibmi-mcp-server-lite-0.1.0.jar --tools tools --no-reload
 
 # Full-protocol smoke test against a live IBM i (initialize -> tools/list -> tools/call).
 # Needs a configured .env and the built jar, so package first.
@@ -143,7 +143,7 @@ user input — they become parameterized-query binds and are never spliced into 
 
 ### Hot-reload while developing
 
-With the server running (`java -jar ... --tools tools/sample-tools.yaml`), saving the
+With the server running (`java -jar ... --tools tools`), saving the
 YAML file updates the live registry when `YAML_AUTO_RELOAD` is on (default). Watch stderr
 for `YAML file(s) changed` and `YAML reload applied`. A bad save logs an error and leaves
 the previous tools intact.
