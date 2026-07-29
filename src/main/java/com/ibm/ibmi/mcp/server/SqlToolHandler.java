@@ -116,9 +116,12 @@ public final class SqlToolHandler
 
       try {
         if (tool.isFetchAll()) {
-          return executePaginatedQuery(query);
+          PaginatedResult result = executePaginatedQuery(query);
+          sources.recordActivity(tool.source());
+          return result;
         } else {
           QueryResult<Object> result = query.<Object>execute(tool.effectiveRowsToFetch()).get();
+          sources.recordActivity(tool.source());
           return new PaginatedResult(result, false);
         }
       } finally {

@@ -1,6 +1,8 @@
 package com.ibm.ibmi.mcp.mapepire;
 
 import java.time.Duration;
+import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -25,8 +27,34 @@ public final class SourceManager implements AutoCloseable {
 
   static final Duration SHUTDOWN_GRACE = Duration.ofSeconds(5);
 
+  /**
+   * Cached pool health for probes. Mapepire's Java {@link Pool} does not expose
+   * initialized/connecting/health fields, so we track them here.
+   *
+   * <p>{@code lastActivityAt} is updated on pool lifecycle events (connect / fail /
+   * evict) and on successful queries.
+   */
+  public record PoolHealth(
+      boolean initialized,
+      boolean connecting,
+      String healthStatus,
+      Instant lastActivityAt) {
+
+    Map<String, Object> toSummaryMap() {
+      Map<String, Object> map = new LinkedHashMap<>();
+      map.put("initialized", initialized);
+      map.put("connecting", connecting);
+      map.put("healthStatus", healthStatus);
+      if (lastActivityAt != null) {
+        map.put("lastActivityAt", lastActivityAt.toString());
+      }
+      return map;
+    }
+  }
+
   private final Map<String, SourceConfig> sources;
   private final Map<String, Pool> pools = new ConcurrentHashMap<>();
+  private final Map<String, PoolHealth> health = new ConcurrentHashMap<>();
   private final AtomicInteger inFlightQueries = new AtomicInteger(0);
 
   public SourceManager(Map<String, SourceConfig> sources) {
@@ -57,6 +85,7 @@ public final class SourceManager implements AutoCloseable {
     if (source == null) {
       throw new IllegalArgumentException("Unknown source: " + sourceName);
     }
+    markConnecting(sourceName);
     PoolOptions options = poolOptionsFor(source);
     Pool pool = new Pool(options);
     Object libs = source.jdbcOptions().get("libraries");
@@ -70,6 +99,7 @@ public final class SourceManager implements AutoCloseable {
     try {
       pool.init().get();
     } catch (Exception e) {
+      health.put(sourceName, new PoolHealth(false, false, "unhealthy", Instant.now()));
       try {
         pool.end();
       } catch (Exception endEx) {
@@ -80,6 +110,7 @@ public final class SourceManager implements AutoCloseable {
     }
     log.info("Connected pool for source '{}'", sourceName);
     pools.put(sourceName, pool);
+    health.put(sourceName, new PoolHealth(true, false, "healthy", Instant.now()));
     return pool;
   }
 
@@ -87,6 +118,7 @@ public final class SourceManager implements AutoCloseable {
   public synchronized void evictPool(String sourceName) {
     Pool pool = pools.remove(sourceName);
     if (pool != null) {
+      health.put(sourceName, new PoolHealth(false, false, "unhealthy", Instant.now()));
       try {
         pool.end();
         log.info("Evicted pool for source '{}'", sourceName);
@@ -94,6 +126,52 @@ public final class SourceManager implements AutoCloseable {
         log.warn("Error ending pool for source '{}': {}", sourceName, e.getMessage());
       }
     }
+  }
+
+  /**
+   * Records a successful query against {@code sourceName}. Updates
+   * {@code lastActivityAt} and marks the pool healthy (Node SourceManager parity).
+   */
+  public synchronized void recordActivity(String sourceName) {
+    PoolHealth current = health.get(sourceName);
+    if (current == null) {
+      return;
+    }
+    health.put(sourceName, new PoolHealth(
+        current.initialized(),
+        current.connecting(),
+        "healthy",
+        Instant.now()));
+  }
+
+  /**
+   * Lightweight health summary for sources that have attempted a connection. Suitable for
+   * {@code GET /healthz}. Cached lifecycle state only — does not probe Mapepire.
+   */
+  public Map<String, Map<String, Object>> getHealthSummary() {
+    Map<String, Map<String, Object>> summary = new LinkedHashMap<>();
+    for (Map.Entry<String, PoolHealth> entry : health.entrySet()) {
+      summary.put(entry.getKey(), entry.getValue().toSummaryMap());
+    }
+    return summary;
+  }
+
+  /** Test hook to inject cached health without connecting to Mapepire. */
+  public void putHealth(String sourceName, PoolHealth poolHealth) {
+    health.put(sourceName, poolHealth);
+  }
+
+  /**
+   * Marks a source as connecting. Keeps {@code unhealthy} sticky across reconnect so
+   * {@code /healthz} stays degraded until init succeeds or fails; first-time connect
+   * uses {@code unknown}.
+   */
+  void markConnecting(String sourceName) {
+    PoolHealth previous = health.get(sourceName);
+    String status = previous != null && "unhealthy".equals(previous.healthStatus())
+        ? "unhealthy"
+        : "unknown";
+    health.put(sourceName, new PoolHealth(false, true, status, Instant.now()));
   }
 
   static PoolOptions poolOptionsFor(SourceConfig source) {
@@ -126,6 +204,7 @@ public final class SourceManager implements AutoCloseable {
         }
       });
       pools.clear();
+      health.clear();
     }
   }
 

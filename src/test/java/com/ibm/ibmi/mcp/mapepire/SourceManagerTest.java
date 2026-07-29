@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Field;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -135,6 +136,88 @@ class SourceManagerTest {
 
     assertDoesNotThrow(() -> manager.close(Duration.ZERO));
     assertTrue(secondPoolEnded.get(), "remaining pools should still be closed");
+  }
+
+  @Test
+  void getHealthSummary_emptyWhenNoPools() {
+    SourceManager manager = new SourceManager(Map.of());
+    assertEquals(Map.of(), manager.getHealthSummary());
+  }
+
+  @Test
+  void getHealthSummary_reportsHealthyPools() {
+    Instant activity = Instant.parse("2026-07-29T15:00:00Z");
+    SourceManager manager = new SourceManager(Map.of());
+    manager.putHealth("src-a", new SourceManager.PoolHealth(true, false, "healthy", activity));
+    manager.putHealth("src-b", new SourceManager.PoolHealth(true, false, "healthy", activity));
+
+    Map<String, Map<String, Object>> summary = manager.getHealthSummary();
+    assertEquals(2, summary.size());
+    assertEquals("healthy", summary.get("src-a").get("healthStatus"));
+    assertEquals(true, summary.get("src-a").get("initialized"));
+    assertEquals(false, summary.get("src-a").get("connecting"));
+    assertEquals(activity.toString(), summary.get("src-a").get("lastActivityAt"));
+    assertEquals("healthy", summary.get("src-b").get("healthStatus"));
+  }
+
+  @Test
+  void getHealthSummary_reportsUnhealthyPools() {
+    SourceManager manager = new SourceManager(Map.of());
+    manager.putHealth("good", new SourceManager.PoolHealth(true, false, "healthy", Instant.now()));
+    manager.putHealth("bad", new SourceManager.PoolHealth(false, false, "unhealthy", Instant.now()));
+
+    Map<String, Map<String, Object>> summary = manager.getHealthSummary();
+    assertEquals("healthy", summary.get("good").get("healthStatus"));
+    assertEquals("unhealthy", summary.get("bad").get("healthStatus"));
+    assertEquals(false, summary.get("bad").get("initialized"));
+  }
+
+  @Test
+  void markConnecting_firstConnectUsesUnknown() {
+    SourceManager manager = new SourceManager(Map.of());
+    manager.markConnecting("ibmi");
+
+    Map<String, Object> pool = manager.getHealthSummary().get("ibmi");
+    assertEquals("unknown", pool.get("healthStatus"));
+    assertEquals(true, pool.get("connecting"));
+    assertEquals(false, pool.get("initialized"));
+  }
+
+  @Test
+  void markConnecting_keepsUnhealthyStickyDuringReconnect() {
+    Instant prior = Instant.parse("2026-07-29T12:00:00Z");
+    SourceManager manager = new SourceManager(Map.of());
+    manager.putHealth("ibmi", new SourceManager.PoolHealth(false, false, "unhealthy", prior));
+
+    manager.markConnecting("ibmi");
+
+    Map<String, Object> pool = manager.getHealthSummary().get("ibmi");
+    assertEquals("unhealthy", pool.get("healthStatus"));
+    assertEquals(true, pool.get("connecting"));
+    assertEquals(false, pool.get("initialized"));
+    assertTrue(((String) pool.get("lastActivityAt")).compareTo(prior.toString()) >= 0);
+  }
+
+  @Test
+  void recordActivity_updatesTimestampAndMarksHealthy() throws InterruptedException {
+    Instant prior = Instant.parse("2026-07-29T12:00:00Z");
+    SourceManager manager = new SourceManager(Map.of());
+    manager.putHealth("ibmi", new SourceManager.PoolHealth(true, false, "healthy", prior));
+
+    Thread.sleep(2);
+    manager.recordActivity("ibmi");
+
+    Map<String, Object> pool = manager.getHealthSummary().get("ibmi");
+    assertEquals("healthy", pool.get("healthStatus"));
+    assertEquals(true, pool.get("initialized"));
+    assertTrue(((String) pool.get("lastActivityAt")).compareTo(prior.toString()) > 0);
+  }
+
+  @Test
+  void recordActivity_noopWhenSourceUnknown() {
+    SourceManager manager = new SourceManager(Map.of());
+    manager.recordActivity("missing");
+    assertEquals(Map.of(), manager.getHealthSummary());
   }
 
   @SuppressWarnings("unchecked")

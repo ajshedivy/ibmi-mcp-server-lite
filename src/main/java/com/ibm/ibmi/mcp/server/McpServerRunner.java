@@ -264,6 +264,7 @@ public final class McpServerRunner {
 
     Server jetty = HttpTransport.start(
         transportProvider,
+        sources,
         transport.httpHost(),
         transport.httpPort(),
         transport.httpEndpoint());
