@@ -18,6 +18,7 @@ import com.ibm.ibmi.mcp.config.SqlToolConfig;
 import com.ibm.ibmi.mcp.config.ToolsConfig;
 import com.ibm.ibmi.mcp.config.ToolsetConfig;
 import com.ibm.ibmi.mcp.config.YamlConfigLoader;
+import com.ibm.ibmi.mcp.server.CorsConfig;
 import com.ibm.ibmi.mcp.server.McpServerRunner;
 import com.ibm.ibmi.mcp.server.TransportConfig;
 import com.ibm.ibmi.mcp.util.DotEnv;
@@ -38,7 +39,7 @@ import com.ibm.ibmi.mcp.util.ShutdownGuard;
  * daemon. Configuration can also come from the environment: {@code TOOLS_YAML_PATH},
  * {@code SELECTED_TOOLSETS}, {@code YAML_AUTO_RELOAD}, {@code MCP_LOG_LEVEL},
  * {@code MCP_TRANSPORT_TYPE}, {@code MCP_HTTP_PORT}, {@code MCP_HTTP_HOST},
- * {@code MCP_HTTP_ENDPOINT_PATH}.
+ * {@code MCP_HTTP_ENDPOINT_PATH}, {@code MCP_ALLOWED_ORIGINS}, {@code MCP_SERVER_ENV}.
  */
 public final class Main {
 
@@ -119,7 +120,9 @@ public final class Main {
         httpHost = resolveConfigValue(httpHost, env, "MCP_HTTP_HOST", TransportConfig.DEFAULT_HOST);
         httpEndpoint = resolveConfigValue(
             httpEndpoint, env, "MCP_HTTP_ENDPOINT_PATH", TransportConfig.DEFAULT_ENDPOINT);
-        transportConfig = resolveHttpTransportConfig(httpHost, httpPort, httpEndpoint);
+        Set<String> corsOrigins = CorsConfig.resolveOriginPatterns(
+            env.get("MCP_ALLOWED_ORIGINS"), env.get("MCP_SERVER_ENV"));
+        transportConfig = resolveHttpTransportConfig(httpHost, httpPort, httpEndpoint, corsOrigins);
       } else {
         validateTransportName(transport);
       }
@@ -210,11 +213,22 @@ public final class Main {
 
   /**
    * Validates HTTP bind settings. CLI values should already be merged with env defaults.
+   * Uses non-prod allow-all CORS ({@code *}).
    *
    * @throws IllegalArgumentException when HTTP settings are invalid
    */
   static TransportConfig resolveHttpTransportConfig(
       String httpHost, String httpPort, String httpEndpoint) {
+    return resolveHttpTransportConfig(httpHost, httpPort, httpEndpoint, Set.of("*"));
+  }
+
+  /**
+   * Validates HTTP bind settings and attaches CORS origin patterns.
+   *
+   * @throws IllegalArgumentException when HTTP settings are invalid
+   */
+  static TransportConfig resolveHttpTransportConfig(
+      String httpHost, String httpPort, String httpEndpoint, Set<String> corsOriginPatterns) {
     if (httpHost == null || httpHost.isBlank()) {
       throw new IllegalArgumentException(
           "No HTTP host given (use --http-host or MCP_HTTP_HOST)");
@@ -239,7 +253,7 @@ public final class Main {
     if (!httpEndpoint.startsWith("/")) {
       throw new IllegalArgumentException("HTTP endpoint must start with /: " + httpEndpoint);
     }
-    return new TransportConfig(httpHost, port, httpEndpoint);
+    return new TransportConfig(httpHost, port, httpEndpoint, corsOriginPatterns);
   }
 
   private static String orDefault(String value, String fallback) {

@@ -267,7 +267,8 @@ public final class McpServerRunner {
         sources,
         transport.httpHost(),
         transport.httpPort(),
-        transport.httpEndpoint());
+        transport.httpEndpoint(),
+        transport.corsOriginPatterns());
     handle.attachJetty(jetty);
 
     int boundPort = HttpTransport.localPort(jetty);

@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
 
 import org.eclipse.jetty.server.Server;
 import org.junit.jupiter.api.AfterEach;
@@ -251,22 +252,138 @@ class HttpTransportIntegrationTest {
     assertFalse(jetty.isRunning());
   }
 
+  @Test
+  @Timeout(15)
+  void corsAllowlistPreflightSucceeds(@TempDir Path tempDir) throws Exception {
+    String allowed = "http://localhost:5173";
+    String mcpUrl = startServer(tempDir, false, Set.of(Pattern.quote(allowed)));
+    HttpClient client = HttpClient.newHttpClient();
+
+    HttpResponse<Void> response = client.send(
+        preflight(mcpUrl, allowed), HttpResponse.BodyHandlers.discarding());
+
+    assertTrue(response.statusCode() == 200 || response.statusCode() == 204,
+        "preflight status: " + response.statusCode());
+    assertEquals(allowed, response.headers().firstValue("access-control-allow-origin").orElse(null));
+    assertEquals("true",
+        response.headers().firstValue("access-control-allow-credentials").orElse(null));
+    String methods = response.headers().firstValue("access-control-allow-methods").orElse("");
+    assertTrue(methods.toUpperCase().contains("POST"), methods);
+    String headers = response.headers().firstValue("access-control-allow-headers").orElse("");
+    assertTrue(headers.toLowerCase().contains("mcp-session-id"), headers);
+    assertTrue(headers.toLowerCase().contains("authorization"), headers);
+  }
+
+  @Test
+  @Timeout(15)
+  void corsAllowlistRejectsOtherOrigin(@TempDir Path tempDir) throws Exception {
+    String mcpUrl = startServer(tempDir, false,
+        Set.of(Pattern.quote("http://localhost:5173")));
+    HttpClient client = HttpClient.newHttpClient();
+
+    HttpResponse<Void> response = client.send(
+        preflight(mcpUrl, "http://evil.example"), HttpResponse.BodyHandlers.discarding());
+
+    assertTrue(response.headers().firstValue("access-control-allow-origin").isEmpty(),
+        "rejected origin must not receive ACAO");
+  }
+
+  @Test
+  @Timeout(15)
+  void corsAllowAllEchoesAnyOrigin(@TempDir Path tempDir) throws Exception {
+    String mcpUrl = startServer(tempDir, false, Set.of("*"));
+    HttpClient client = HttpClient.newHttpClient();
+    String origin = "http://any-dev.example:3000";
+
+    HttpResponse<Void> response = client.send(
+        preflight(mcpUrl, origin), HttpResponse.BodyHandlers.discarding());
+
+    assertEquals(origin, response.headers().firstValue("access-control-allow-origin").orElse(null));
+  }
+
+  @Test
+  @Timeout(15)
+  void corsDenyAllOmitsAllowOrigin(@TempDir Path tempDir) throws Exception {
+    String mcpUrl = startServer(tempDir, false, Set.of());
+    HttpClient client = HttpClient.newHttpClient();
+
+    HttpResponse<Void> response = client.send(
+        preflight(mcpUrl, "http://localhost:5173"), HttpResponse.BodyHandlers.discarding());
+
+    assertTrue(response.headers().firstValue("access-control-allow-origin").isEmpty());
+  }
+
+  @Test
+  @Timeout(15)
+  void corsHealthzReflectsAllowedOrigin(@TempDir Path tempDir) throws Exception {
+    String allowed = "http://localhost:5173";
+    String mcpUrl = startServer(tempDir, false, Set.of(Pattern.quote(allowed)));
+    String healthUrl = mcpUrl.replace(TransportConfig.DEFAULT_ENDPOINT, "/healthz");
+    HttpClient client = HttpClient.newHttpClient();
+
+    HttpRequest request = HttpRequest.newBuilder()
+        .uri(URI.create(healthUrl))
+        .header("Origin", allowed)
+        .GET()
+        .build();
+    HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+    assertEquals(200, response.statusCode(), response.body());
+    assertEquals(allowed, response.headers().firstValue("access-control-allow-origin").orElse(null));
+  }
+
+  @Test
+  @Timeout(15)
+  void mcpPostWithoutOriginWorksUnderAllowlist(@TempDir Path tempDir) throws Exception {
+    String baseUrl = startServer(tempDir, false,
+        Set.of(Pattern.quote("http://localhost:5173")));
+    HttpClient client = HttpClient.newHttpClient();
+    String sessionId = initializeSession(client, baseUrl);
+    assertNotNull(sessionId);
+  }
+
+  @Test
+  @Timeout(15)
+  void mcpPostWithoutOriginWorksUnderDenyAll(@TempDir Path tempDir) throws Exception {
+    String baseUrl = startServer(tempDir, false, Set.of());
+    HttpClient client = HttpClient.newHttpClient();
+    String sessionId = initializeSession(client, baseUrl);
+    assertNotNull(sessionId);
+  }
+
   private String startServer(Path tempDir) throws Exception {
     return startServer(tempDir, false);
   }
 
   private String startServer(Path tempDir, boolean enableExecuteSql) throws Exception {
+    return startServer(tempDir, enableExecuteSql, Set.of("*"));
+  }
+
+  private String startServer(Path tempDir, boolean enableExecuteSql, Set<String> corsOriginPatterns)
+      throws Exception {
     Path yaml = tempDir.resolve("tools.yaml");
     Files.writeString(yaml, MINIMAL_TOOLS_YAML);
 
     ToolsConfig config = new YamlConfigLoader(Map.of()).load(yaml);
-    TransportConfig transport = new TransportConfig("127.0.0.1", 0, TransportConfig.DEFAULT_ENDPOINT);
+    TransportConfig transport = new TransportConfig(
+        "127.0.0.1", 0, TransportConfig.DEFAULT_ENDPOINT, corsOriginPatterns);
     McpServerRunner.ServerHandle[] slot = new McpServerRunner.ServerHandle[1];
     handle = McpServerRunner.startHttp(
         config, Set.of(), transport, slot, enableExecuteSql, true);
 
     int port = HttpTransport.localPort(handle.jettyServer());
     return "http://127.0.0.1:" + port + TransportConfig.DEFAULT_ENDPOINT;
+  }
+
+  private static HttpRequest preflight(String url, String origin) {
+    return HttpRequest.newBuilder()
+        .uri(URI.create(url))
+        .method("OPTIONS", HttpRequest.BodyPublishers.noBody())
+        .header("Origin", origin)
+        .header("Access-Control-Request-Method", "POST")
+        .header("Access-Control-Request-Headers",
+            "content-type,mcp-session-id,authorization")
+        .build();
   }
 
   private static String initializeSession(HttpClient client, String baseUrl) throws Exception {

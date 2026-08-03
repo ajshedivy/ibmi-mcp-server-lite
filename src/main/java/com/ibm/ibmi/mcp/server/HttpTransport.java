@@ -1,11 +1,13 @@
 package com.ibm.ibmi.mcp.server;
 
 import java.net.BindException;
+import java.util.Set;
 
 import org.eclipse.jetty.ee10.servlet.ServletContextHandler;
 import org.eclipse.jetty.ee10.servlet.ServletHolder;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.ServerConnector;
+import org.eclipse.jetty.server.handler.CrossOriginHandler;
 
 import com.ibm.ibmi.mcp.mapepire.SourceManager;
 
@@ -13,7 +15,8 @@ import io.modelcontextprotocol.server.transport.HttpServletStreamableServerTrans
 
 /**
  * Boots an embedded Jetty instance that hosts the MCP Streamable HTTP servlet transport
- * and an unauthenticated {@code GET /healthz} probe.
+ * and an unauthenticated {@code GET /healthz} probe, wrapped with CORS via
+ * {@link CrossOriginHandler}.
  */
 public final class HttpTransport {
 
@@ -21,15 +24,17 @@ public final class HttpTransport {
 
   /**
    * Binds Jetty to {@code host}:{@code port}, mounts {@code servlet} at {@code endpointPath},
-   * mounts {@code GET /healthz}, and starts the server. Use port {@code 0} for an ephemeral
-   * port (tests only); read the bound port from {@link #localPort(Server)} after start.
+   * mounts {@code GET /healthz}, applies CORS for all paths, and starts the server.
+   * Use port {@code 0} for an ephemeral port (tests only); read the bound port from
+   * {@link #localPort(Server)} after start.
    */
   public static Server start(
       HttpServletStreamableServerTransportProvider servlet,
       SourceManager sources,
       String host,
       int port,
-      String endpointPath) throws Exception {
+      String endpointPath,
+      Set<String> corsOriginPatterns) throws Exception {
     Server server = new Server();
     ServerConnector connector = new ServerConnector(server);
     connector.setHost(host);
@@ -44,7 +49,11 @@ public final class HttpTransport {
     context.addServlet(holder, endpointPath);
     context.addServlet(new ServletHolder(new HealthServlet(sources)), "/healthz");
 
-    server.setHandler(context);
+    CrossOriginHandler cors = new CrossOriginHandler();
+    CorsConfig.apply(cors, corsOriginPatterns);
+    cors.setHandler(context);
+    server.setHandler(cors);
+
     try {
       server.start();
     } catch (Exception e) {

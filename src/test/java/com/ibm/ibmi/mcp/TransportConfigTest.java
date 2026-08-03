@@ -4,6 +4,8 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import java.util.Set;
+
 import org.junit.jupiter.api.Test;
 
 import com.ibm.ibmi.mcp.server.TransportConfig;
@@ -35,6 +37,7 @@ class TransportConfigTest {
     assertEquals(TransportConfig.DEFAULT_HOST, config.httpHost());
     assertEquals(3010, config.httpPort());
     assertEquals(TransportConfig.DEFAULT_ENDPOINT, config.httpEndpoint());
+    assertEquals(Set.of("*"), config.corsOriginPatterns());
   }
 
   @Test
@@ -43,6 +46,13 @@ class TransportConfigTest {
     assertEquals("127.0.0.1", config.httpHost());
     assertEquals(8080, config.httpPort());
     assertEquals("/mcp", config.httpEndpoint());
+  }
+
+  @Test
+  void resolveHttpTransportConfig_attachesCorsPatterns() {
+    TransportConfig config = Main.resolveHttpTransportConfig(
+        "127.0.0.1", "3010", "/mcp", Set.of());
+    assertEquals(Set.of(), config.corsOriginPatterns());
   }
 
   @Test
@@ -65,5 +75,11 @@ class TransportConfigTest {
   void resolveHttpTransportConfig_rejectsBlankHost() {
     assertThrows(IllegalArgumentException.class,
         () -> Main.resolveHttpTransportConfig("  ", "3010", "/mcp"));
+  }
+
+  @Test
+  void transportConfig_nullCorsPatterns_becomeDenyAll() {
+    TransportConfig config = new TransportConfig("127.0.0.1", 3010, "/mcp", null);
+    assertEquals(Set.of(), config.corsOriginPatterns());
   }
 }
