@@ -25,6 +25,8 @@ sources:
     ignore-unauthorized: true # optional, default false — skip TLS chain + hostname verification (mapepire-sdk 0.1.3+)
     max-size: 10              # optional, default 10 — max SqlJobs in the connection pool
     starting-size: 2          # optional, default 2 — jobs created at pool init
+    mcp-pool-idle-timeout-ms: 300000  # optional — idle pool eviction (ms); 0 disables
+    mcp-pool-query-timeout-ms: 30000  # optional — execute/fetch timeout (ms); 0 disables
     jdbc-options:             # optional — forwarded to mapepire JDBC driver
       libraries: [MYLIB, DEVDATA]  # array or comma-separated string
       naming: system               # any other JDBC option passes through
@@ -32,6 +34,9 @@ sources:
 
 > `DB2i_JDBC_OPTIONS` env var (semicolon-separated `key=value;...`) shallow-merges over
 > `jdbc-options` per source — env wins on key collisions. See `.env.example`.
+>
+> When the YAML timeout keys are omitted, `MCP_POOL_IDLE_TIMEOUT_MS` (default 300000)
+> and `MCP_POOL_QUERY_TIMEOUT_MS` (default 30000) apply. Explicit YAML values win.
 
 ## `tools` — parameterized SQL
 

@@ -2,6 +2,8 @@ package com.ibm.ibmi.mcp.mapepire;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -9,6 +11,8 @@ import java.lang.reflect.Field;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.junit.jupiter.api.Test;
@@ -31,7 +35,7 @@ class SourceManagerTest {
   void poolOptionsUseSourceDefaults() {
     SourceConfig source = new SourceConfig(
         "ibmi", "host.example.com", 8076, "user", "pass", false,
-        SourceConfig.DEFAULT_MAX_SIZE, SourceConfig.DEFAULT_STARTING_SIZE, Map.of());
+        SourceConfig.DEFAULT_MAX_SIZE, SourceConfig.DEFAULT_STARTING_SIZE, SourceConfig.DEFAULT_MCP_POOL_IDLE_TIMEOUT_MS, SourceConfig.DEFAULT_MCP_POOL_QUERY_TIMEOUT_MS, Map.of());
     PoolOptions options = SourceManager.poolOptionsFor(source);
 
     assertEquals(SourceConfig.DEFAULT_MAX_SIZE, options.getMaxSize());
@@ -49,7 +53,7 @@ class SourceManagerTest {
   void poolOptionsHonorExplicitSizes() {
     SourceConfig source = new SourceConfig(
         "ibmi", "h", 8076, "u", "p", true,
-        5, 1, Map.of());
+        5, 1, SourceConfig.DEFAULT_MCP_POOL_IDLE_TIMEOUT_MS, SourceConfig.DEFAULT_MCP_POOL_QUERY_TIMEOUT_MS, Map.of());
     PoolOptions options = SourceManager.poolOptionsFor(source);
 
     assertEquals(5, options.getMaxSize());
@@ -113,7 +117,7 @@ class SourceManagerTest {
   void closeContinuesWhenOnePoolEndFails() throws Exception {
     SourceConfig source = new SourceConfig(
         "ibmi", "h", 8076, "u", "p", false,
-        SourceConfig.DEFAULT_MAX_SIZE, SourceConfig.DEFAULT_STARTING_SIZE, Map.of());
+        SourceConfig.DEFAULT_MAX_SIZE, SourceConfig.DEFAULT_STARTING_SIZE, SourceConfig.DEFAULT_MCP_POOL_IDLE_TIMEOUT_MS, SourceConfig.DEFAULT_MCP_POOL_QUERY_TIMEOUT_MS, Map.of());
     PoolOptions options = SourceManager.poolOptionsFor(source);
 
     AtomicBoolean secondPoolEnded = new AtomicBoolean(false);
@@ -218,6 +222,280 @@ class SourceManagerTest {
     SourceManager manager = new SourceManager(Map.of());
     manager.recordActivity("missing");
     assertEquals(Map.of(), manager.getHealthSummary());
+  }
+
+  @Test
+  void awaitQuery_returnsCompletedResult() throws Exception {
+    SourceConfig source = new SourceConfig(
+        "ibmi", "h", 8076, "u", "p", false,
+        SourceConfig.DEFAULT_MAX_SIZE, SourceConfig.DEFAULT_STARTING_SIZE,
+        SourceConfig.DEFAULT_MCP_POOL_IDLE_TIMEOUT_MS, 1_000, Map.of());
+    SourceManager manager = new SourceManager(Map.of("ibmi", source));
+
+    assertEquals("ok", manager.awaitQuery("ibmi", CompletableFuture.completedFuture("ok")));
+  }
+
+  @Test
+  void awaitQuery_timeoutEvictsPool() throws Exception {
+    SourceConfig source = new SourceConfig(
+        "ibmi", "h", 8076, "u", "p", false,
+        SourceConfig.DEFAULT_MAX_SIZE, SourceConfig.DEFAULT_STARTING_SIZE,
+        SourceConfig.DEFAULT_MCP_POOL_IDLE_TIMEOUT_MS, 50, Map.of());
+    SourceManager manager = new SourceManager(Map.of("ibmi", source));
+
+    AtomicBoolean ended = new AtomicBoolean(false);
+    Pool pool = new Pool(SourceManager.poolOptionsFor(source)) {
+      @Override
+      public void end() {
+        ended.set(true);
+      }
+    };
+    registerPool(manager, "ibmi", pool);
+    manager.putHealth("ibmi", new SourceManager.PoolHealth(true, false, "healthy", Instant.now()));
+
+    TimeoutException timeout = assertThrows(
+        TimeoutException.class,
+        () -> manager.awaitQuery("ibmi", new CompletableFuture<>()));
+    assertTrue(timeout.getMessage().contains("50ms"));
+    assertTrue(timeout.getMessage().contains("ibmi"));
+    assertTrue(ended.get(), "timed-out pool should be ended");
+    assertFalse(poolMap(manager).containsKey("ibmi"));
+    assertEquals("unhealthy", manager.getHealthSummary().get("ibmi").get("healthStatus"));
+  }
+
+  @Test
+  void awaitQuery_timeoutDoesNotEvictReplacedPool() throws Exception {
+    SourceConfig source = new SourceConfig(
+        "ibmi", "h", 8076, "u", "p", false,
+        SourceConfig.DEFAULT_MAX_SIZE, SourceConfig.DEFAULT_STARTING_SIZE,
+        SourceConfig.DEFAULT_MCP_POOL_IDLE_TIMEOUT_MS, 200, Map.of());
+    SourceManager manager = new SourceManager(Map.of("ibmi", source));
+
+    AtomicBoolean oldEnded = new AtomicBoolean(false);
+    AtomicBoolean newEnded = new AtomicBoolean(false);
+    Pool oldPool = new Pool(SourceManager.poolOptionsFor(source)) {
+      @Override
+      public void end() {
+        oldEnded.set(true);
+      }
+    };
+    Pool newPool = new Pool(SourceManager.poolOptionsFor(source)) {
+      @Override
+      public void end() {
+        newEnded.set(true);
+      }
+    };
+    registerPool(manager, "ibmi", oldPool);
+    manager.putHealth("ibmi", new SourceManager.PoolHealth(true, false, "healthy", Instant.now()));
+
+    CompletableFuture<String> never = new CompletableFuture<>();
+    Thread waiter = new Thread(() -> {
+      try {
+        manager.awaitQuery("ibmi", never);
+      } catch (TimeoutException expected) {
+        // expected
+      } catch (Exception e) {
+        throw new RuntimeException(e);
+      }
+    });
+    waiter.start();
+    // Let awaitQuery snapshot oldPool before we replace it
+    Thread.sleep(50);
+    manager.evictPool("ibmi");
+    registerPool(manager, "ibmi", newPool);
+    manager.putHealth("ibmi", new SourceManager.PoolHealth(true, false, "healthy", Instant.now()));
+    waiter.join(3000);
+
+    assertTrue(oldEnded.get(), "original timed-out pool should have been ended by concurrent evict");
+    assertFalse(newEnded.get(), "replacement pool must not be ended by delayed timeout eviction");
+    assertTrue(poolMap(manager).containsKey("ibmi"));
+    assertSame(newPool, poolMap(manager).get("ibmi"));
+  }
+
+  @Test
+  void evictPoolIfSame_noopWhenPoolAlreadyReplaced() throws Exception {
+    SourceConfig source = new SourceConfig(
+        "ibmi", "h", 8076, "u", "p", false,
+        SourceConfig.DEFAULT_MAX_SIZE, SourceConfig.DEFAULT_STARTING_SIZE,
+        SourceConfig.DEFAULT_MCP_POOL_IDLE_TIMEOUT_MS,
+        SourceConfig.DEFAULT_MCP_POOL_QUERY_TIMEOUT_MS, Map.of());
+    SourceManager manager = new SourceManager(Map.of("ibmi", source));
+
+    AtomicBoolean oldEnded = new AtomicBoolean(false);
+    AtomicBoolean newEnded = new AtomicBoolean(false);
+    Pool oldPool = new Pool(SourceManager.poolOptionsFor(source)) {
+      @Override
+      public void end() {
+        oldEnded.set(true);
+      }
+    };
+    Pool newPool = new Pool(SourceManager.poolOptionsFor(source)) {
+      @Override
+      public void end() {
+        newEnded.set(true);
+      }
+    };
+    registerPool(manager, "ibmi", newPool);
+    manager.putHealth("ibmi", new SourceManager.PoolHealth(true, false, "healthy", Instant.now()));
+
+    manager.evictPoolIfSame("ibmi", oldPool);
+
+    assertFalse(oldEnded.get());
+    assertFalse(newEnded.get());
+    assertSame(newPool, poolMap(manager).get("ibmi"));
+    assertEquals("healthy", manager.getHealthSummary().get("ibmi").get("healthStatus"));
+  }
+
+  @Test
+  void awaitQuery_zeroTimeoutDisablesTimeout() throws Exception {
+    SourceConfig source = new SourceConfig(
+        "ibmi", "h", 8076, "u", "p", false,
+        SourceConfig.DEFAULT_MAX_SIZE, SourceConfig.DEFAULT_STARTING_SIZE,
+        SourceConfig.DEFAULT_MCP_POOL_IDLE_TIMEOUT_MS, 0, Map.of());
+    SourceManager manager = new SourceManager(Map.of("ibmi", source));
+
+    CompletableFuture<String> delayed = new CompletableFuture<>();
+    Thread completer = new Thread(() -> {
+      try {
+        Thread.sleep(80);
+        delayed.complete("late");
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+      }
+    });
+    completer.start();
+    assertEquals("late", manager.awaitQuery("ibmi", delayed));
+    completer.join();
+  }
+
+  @Test
+  void closeIdlePools_evictsPoolPastThreshold() throws Exception {
+    SourceConfig source = new SourceConfig(
+        "ibmi", "h", 8076, "u", "p", false,
+        SourceConfig.DEFAULT_MAX_SIZE, SourceConfig.DEFAULT_STARTING_SIZE,
+        100, SourceConfig.DEFAULT_MCP_POOL_QUERY_TIMEOUT_MS, Map.of());
+    SourceManager manager = new SourceManager(Map.of("ibmi", source));
+
+    AtomicBoolean ended = new AtomicBoolean(false);
+    Pool pool = new Pool(SourceManager.poolOptionsFor(source)) {
+      @Override
+      public void end() {
+        ended.set(true);
+      }
+    };
+    registerPool(manager, "ibmi", pool);
+    manager.putHealth(
+        "ibmi",
+        new SourceManager.PoolHealth(true, false, "healthy", Instant.now().minusMillis(500)));
+
+    manager.closeIdlePools();
+
+    assertTrue(ended.get());
+    assertFalse(poolMap(manager).containsKey("ibmi"));
+    assertEquals("unknown", manager.getHealthSummary().get("ibmi").get("healthStatus"));
+  }
+
+  @Test
+  void closeIdlePools_skipsWhenQueryInFlight() throws Exception {
+    SourceConfig source = new SourceConfig(
+        "ibmi", "h", 8076, "u", "p", false,
+        SourceConfig.DEFAULT_MAX_SIZE, SourceConfig.DEFAULT_STARTING_SIZE,
+        100, SourceConfig.DEFAULT_MCP_POOL_QUERY_TIMEOUT_MS, Map.of());
+    SourceManager manager = new SourceManager(Map.of("ibmi", source));
+
+    AtomicBoolean ended = new AtomicBoolean(false);
+    Pool pool = new Pool(SourceManager.poolOptionsFor(source)) {
+      @Override
+      public void end() {
+        ended.set(true);
+      }
+    };
+    registerPool(manager, "ibmi", pool);
+    manager.putHealth(
+        "ibmi",
+        new SourceManager.PoolHealth(true, false, "healthy", Instant.now().minusMillis(500)));
+
+    manager.beginQuery();
+    try {
+      manager.closeIdlePools();
+      assertFalse(ended.get());
+      assertTrue(poolMap(manager).containsKey("ibmi"));
+    } finally {
+      manager.endQuery();
+    }
+  }
+
+  @Test
+  void closeIdlePools_noopWhenIdleTimeoutDisabled() throws Exception {
+    SourceConfig source = new SourceConfig(
+        "ibmi", "h", 8076, "u", "p", false,
+        SourceConfig.DEFAULT_MAX_SIZE, SourceConfig.DEFAULT_STARTING_SIZE,
+        0, SourceConfig.DEFAULT_MCP_POOL_QUERY_TIMEOUT_MS, Map.of());
+    SourceManager manager = new SourceManager(Map.of("ibmi", source));
+
+    AtomicBoolean ended = new AtomicBoolean(false);
+    Pool pool = new Pool(SourceManager.poolOptionsFor(source)) {
+      @Override
+      public void end() {
+        ended.set(true);
+      }
+    };
+    registerPool(manager, "ibmi", pool);
+    manager.putHealth(
+        "ibmi",
+        new SourceManager.PoolHealth(true, false, "healthy", Instant.now().minusSeconds(60)));
+
+    manager.closeIdlePools();
+
+    assertFalse(ended.get());
+    assertTrue(poolMap(manager).containsKey("ibmi"));
+  }
+
+  @Test
+  void startIdleTimer_noopWhenAllIdleTimeoutsDisabled() {
+    SourceConfig source = new SourceConfig(
+        "ibmi", "h", 8076, "u", "p", false,
+        SourceConfig.DEFAULT_MAX_SIZE, SourceConfig.DEFAULT_STARTING_SIZE,
+        0, SourceConfig.DEFAULT_MCP_POOL_QUERY_TIMEOUT_MS, Map.of());
+    SourceManager manager = new SourceManager(Map.of("ibmi", source));
+
+    manager.startIdleTimer();
+    assertFalse(manager.idleTimerRunning());
+  }
+
+  @Test
+  void startIdleTimer_startsWhenPositiveIdleConfigured() {
+    SourceConfig source = new SourceConfig(
+        "ibmi", "h", 8076, "u", "p", false,
+        SourceConfig.DEFAULT_MAX_SIZE, SourceConfig.DEFAULT_STARTING_SIZE,
+        30_000, SourceConfig.DEFAULT_MCP_POOL_QUERY_TIMEOUT_MS, Map.of());
+    SourceManager manager = new SourceManager(Map.of("ibmi", source));
+
+    manager.startIdleTimer();
+    assertTrue(manager.idleTimerRunning());
+    manager.stopIdleTimer();
+    assertFalse(manager.idleTimerRunning());
+  }
+
+  @Test
+  void close_stopsIdleTimer() {
+    SourceConfig source = new SourceConfig(
+        "ibmi", "h", 8076, "u", "p", false,
+        SourceConfig.DEFAULT_MAX_SIZE, SourceConfig.DEFAULT_STARTING_SIZE,
+        30_000, SourceConfig.DEFAULT_MCP_POOL_QUERY_TIMEOUT_MS, Map.of());
+    SourceManager manager = new SourceManager(Map.of("ibmi", source));
+    manager.startIdleTimer();
+    assertTrue(manager.idleTimerRunning());
+
+    manager.close(Duration.ZERO);
+    assertFalse(manager.idleTimerRunning());
+  }
+
+  @SuppressWarnings("unchecked")
+  private static Map<String, Pool> poolMap(SourceManager manager) throws Exception {
+    Field poolsField = SourceManager.class.getDeclaredField("pools");
+    poolsField.setAccessible(true);
+    return (Map<String, Pool>) poolsField.get(manager);
   }
 
   @SuppressWarnings("unchecked")

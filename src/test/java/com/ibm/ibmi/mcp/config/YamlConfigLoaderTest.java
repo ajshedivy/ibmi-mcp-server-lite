@@ -77,6 +77,8 @@ class YamlConfigLoaderTest {
     assertTrue(source.ignoreUnauthorized());
     assertEquals(SourceConfig.DEFAULT_MAX_SIZE, source.maxSize());
     assertEquals(SourceConfig.DEFAULT_STARTING_SIZE, source.startingSize());
+    assertEquals(SourceConfig.DEFAULT_MCP_POOL_IDLE_TIMEOUT_MS, source.mcpPoolIdleTimeoutMs());
+    assertEquals(SourceConfig.DEFAULT_MCP_POOL_QUERY_TIMEOUT_MS, source.mcpPoolQueryTimeoutMs());
 
     assertEquals(3, config.tools().size());
     SqlToolConfig tool = config.tools().get("active_jobs");
@@ -91,6 +93,150 @@ class YamlConfigLoaderTest {
   void missingEnvVarKeepsPlaceholderVerbatim() {
     YamlConfigLoader emptyEnv = new YamlConfigLoader(Map.of());
     assertEquals("host: ${NOPE}", emptyEnv.interpolateEnvVars("host: ${NOPE}"));
+  }
+
+  @Test
+  void poolTimeoutsDefaultToReferenceWhenUnset() {
+    String yaml = """
+        sources:
+          a:
+            host: h
+            user: u
+            password: p
+        tools:
+          t:
+            source: a
+            description: d
+            statement: SELECT 1 FROM SYSIBM.SYSDUMMY1
+        """;
+    SourceConfig source = new YamlConfigLoader(Map.of()).parse(yaml).sources().get("a");
+    assertEquals(300_000, source.mcpPoolIdleTimeoutMs());
+    assertEquals(30_000, source.mcpPoolQueryTimeoutMs());
+  }
+
+  @Test
+  void poolTimeoutsFromEnvWhenYamlOmits() {
+    String yaml = """
+        sources:
+          a:
+            host: h
+            user: u
+            password: p
+        tools:
+          t:
+            source: a
+            description: d
+            statement: SELECT 1 FROM SYSIBM.SYSDUMMY1
+        """;
+    YamlConfigLoader envLoader = new YamlConfigLoader(Map.of(
+        "MCP_POOL_IDLE_TIMEOUT_MS", "1000",
+        "MCP_POOL_QUERY_TIMEOUT_MS", "100"));
+    SourceConfig source = envLoader.parse(yaml).sources().get("a");
+    assertEquals(1000, source.mcpPoolIdleTimeoutMs());
+    assertEquals(100, source.mcpPoolQueryTimeoutMs());
+  }
+
+  @Test
+  void poolTimeoutsYamlOverridesEnv() {
+    String yaml = """
+        sources:
+          a:
+            host: h
+            user: u
+            password: p
+            mcp-pool-idle-timeout-ms: 5000
+            mcp-pool-query-timeout-ms: 250
+        tools:
+          t:
+            source: a
+            description: d
+            statement: SELECT 1 FROM SYSIBM.SYSDUMMY1
+        """;
+    YamlConfigLoader envLoader = new YamlConfigLoader(Map.of(
+        "MCP_POOL_IDLE_TIMEOUT_MS", "1000",
+        "MCP_POOL_QUERY_TIMEOUT_MS", "100"));
+    SourceConfig source = envLoader.parse(yaml).sources().get("a");
+    assertEquals(5000, source.mcpPoolIdleTimeoutMs());
+    assertEquals(250, source.mcpPoolQueryTimeoutMs());
+  }
+
+  @Test
+  void poolTimeoutsZeroFromEnvDisables() {
+    String yaml = """
+        sources:
+          a:
+            host: h
+            user: u
+            password: p
+        tools:
+          t:
+            source: a
+            description: d
+            statement: SELECT 1 FROM SYSIBM.SYSDUMMY1
+        """;
+    YamlConfigLoader envLoader = new YamlConfigLoader(Map.of(
+        "MCP_POOL_IDLE_TIMEOUT_MS", "0",
+        "MCP_POOL_QUERY_TIMEOUT_MS", "0"));
+    SourceConfig source = envLoader.parse(yaml).sources().get("a");
+    assertEquals(0, source.mcpPoolIdleTimeoutMs());
+    assertEquals(0, source.mcpPoolQueryTimeoutMs());
+  }
+
+  @Test
+  void poolTimeoutEnvInvalidFails() {
+    String yaml = """
+        sources:
+          a:
+            host: h
+            user: u
+            password: p
+        tools:
+          t:
+            source: a
+            description: d
+            statement: SELECT 1 FROM SYSIBM.SYSDUMMY1
+        """;
+    YamlConfigLoader envLoader = new YamlConfigLoader(Map.of("MCP_POOL_QUERY_TIMEOUT_MS", "nope"));
+    ConfigException e = assertThrows(ConfigException.class, () -> envLoader.parse(yaml));
+    assertTrue(e.getMessage().contains("MCP_POOL_QUERY_TIMEOUT_MS"));
+  }
+
+  @Test
+  void poolTimeoutNegativeFromEnvFails() {
+    String yaml = """
+        sources:
+          a:
+            host: h
+            user: u
+            password: p
+        tools:
+          t:
+            source: a
+            description: d
+            statement: SELECT 1 FROM SYSIBM.SYSDUMMY1
+        """;
+    YamlConfigLoader envLoader = new YamlConfigLoader(Map.of("MCP_POOL_IDLE_TIMEOUT_MS", "-1"));
+    ConfigException e = assertThrows(ConfigException.class, () -> envLoader.parse(yaml));
+    assertTrue(e.getMessage().contains("must be >= 0"));
+  }
+
+  @Test
+  void poolTimeoutNegativeFromYamlFails() {
+    String yaml = """
+        sources:
+          a:
+            host: h
+            user: u
+            password: p
+            mcp-pool-query-timeout-ms: -5
+        tools:
+          t:
+            source: a
+            description: d
+            statement: SELECT 1 FROM SYSIBM.SYSDUMMY1
+        """;
+    ConfigException e = assertThrows(ConfigException.class, () -> new YamlConfigLoader(Map.of()).parse(yaml));
+    assertTrue(e.getMessage().contains("must be >= 0"));
   }
 
   @Test
