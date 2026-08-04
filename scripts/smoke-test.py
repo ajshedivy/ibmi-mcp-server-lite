@@ -15,7 +15,8 @@ list_schemas (needs a working Mapepire connection).
 With --execute-sql, also exercises execute_sql read-only rejection (no live DB
 required) and attempts a SELECT (needs a working Mapepire connection).
 
-describe_sql_object is always expected in tools/list when the YAML defines sources.
+describe_sql_object is always expected in tools/list when the YAML defines sources,
+and is called on every run against QSYS2/SYSSCHEMAS.
 """
 import json
 import subprocess
@@ -158,8 +159,8 @@ elif "execute_sql" in tool_names:
 
 call_id = next_id()
 send({"jsonrpc": "2.0", "id": call_id, "method": "tools/call", "params": {
-    "name": "active_job_info", "arguments": {"limit": 3}}})
-print_tool_result("tools/call active_job_info(limit=3)", recv(call_id)["result"])
+    "name": "fetch_all_libraries", "arguments": {}}})
+print_tool_result("tools/call fetch_all_libraries()", recv(call_id)["result"])
 
 call_id = next_id()
 send({"jsonrpc": "2.0", "id": call_id, "method": "tools/call", "params": {
@@ -171,6 +172,51 @@ call_id = next_id()
 send({"jsonrpc": "2.0", "id": call_id, "method": "tools/call", "params": {
     "name": "list_user_libraries", "arguments": {}}})
 print_tool_result("tools/call list_user_libraries(missing arg)", recv(call_id)["result"])
+
+# describe_sql_object is always on and is the only tool running a CALL that returns a
+# result set, so exercise it on every run. QSYS2.SYSCOLUMNS2 generates well over 100 DDL
+# lines, which is what makes this a regression test for the single-fetch row cap.
+call_id = next_id()
+send({"jsonrpc": "2.0", "id": call_id, "method": "tools/call", "params": {
+    "name": "describe_sql_object",
+    "arguments": {
+        "object_library": "QSYS2", "object_name": "SYSCOLUMNS2", "object_type": "VIEW"}}})
+describe_result = recv(call_id)["result"]
+print_tool_result("tools/call describe_sql_object(QSYS2/SYSCOLUMNS2 VIEW)", describe_result)
+describe_payload = parse_tool_payload(describe_result)
+if describe_result.get("isError") or describe_payload is None \
+        or not describe_payload.get("success"):
+    detail = (describe_payload or {}).get("error", "(no payload)")
+    raise SystemExit(f"describe_sql_object should succeed against live Mapepire: {detail}")
+describe_rows = describe_payload.get("data") or []
+if not any("SRCDTA" in row for row in describe_rows):
+    raise SystemExit(
+        f"describe_sql_object returned no SRCDTA source lines: {describe_rows[:2]}")
+if describe_payload.get("metadata", {}).get("truncated"):
+    raise SystemExit("describe_sql_object DDL was truncated; fetchAllRows is not in effect")
+if len(describe_rows) <= 100:
+    raise SystemExit(
+        f"describe_sql_object returned only {len(describe_rows)} DDL lines, so this check no "
+        "longer proves the row cap is gone - pick an object with longer DDL")
+
+# error path: GENERATE_SQL returns an empty result set for a missing object rather than
+# raising, so this must come back as a failure and not as a success with no rows.
+call_id = next_id()
+send({"jsonrpc": "2.0", "id": call_id, "method": "tools/call", "params": {
+    "name": "describe_sql_object",
+    "arguments": {
+        "object_library": "QSYS2", "object_name": "NO_SUCH_OBJECT_XYZ",
+        "object_type": "TABLE"}}})
+missing_result = recv(call_id)["result"]
+print_tool_result("tools/call describe_sql_object(missing object)", missing_result)
+missing_payload = parse_tool_payload(missing_result)
+if not missing_result.get("isError") or missing_payload is None \
+        or missing_payload.get("success"):
+    raise SystemExit("describe_sql_object should report a missing object as an error")
+missing_error = str(missing_payload.get("error", ""))
+if "NO_SUCH_OBJECT_XYZ" not in missing_error or "QSYS2" not in missing_error:
+    raise SystemExit(
+        f"missing-object error should name the object and library searched: {missing_error}")
 
 if enable_builtin_tools:
     call_id = next_id()

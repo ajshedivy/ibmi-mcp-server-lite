@@ -21,6 +21,7 @@ import com.ibm.ibmi.mcp.config.SqlToolConfig;
 import com.ibm.ibmi.mcp.config.ToolsConfig;
 import com.ibm.ibmi.mcp.config.YamlConfigLoader;
 import com.ibm.ibmi.mcp.mapepire.SourceManager;
+import com.ibm.ibmi.mcp.server.BuiltinTools;
 import com.ibm.ibmi.mcp.server.SqlToolHandler;
 
 import io.modelcontextprotocol.spec.McpSchema.CallToolRequest;
@@ -35,6 +36,14 @@ class SqlToolHandlerIT {
 
   private static final Path SAMPLE_TOOLS = Path.of("tools/sample/sample-tools.yaml");
   private static final ObjectMapper MAPPER = new ObjectMapper();
+
+  /**
+   * Catalog view whose generated DDL is comfortably longer than
+   * {@link SqlToolConfig#DEFAULT_ROWS_TO_FETCH} lines, so {@code describe_sql_object} has to
+   * page to return it whole. It is also the view {@code get_table_columns} reads, so it is
+   * present wherever the built-ins are usable at all.
+   */
+  private static final String DDL_PROBE_OBJECT = "SYSCOLUMNS2";
 
   private SourceManager sources;
   private ToolsConfig config;
@@ -56,18 +65,11 @@ class SqlToolHandlerIT {
 
   @Test
   @Timeout(value = 120, unit = TimeUnit.SECONDS)
-  void systemStatusNoParamToolReturnsSuccess() {
-    // system_status has parameters: [] — exercises the pool.query(sql) branch
-    // (no QueryOptions) that parameterized tools never hit.
-    CallToolResult result = call("system_status", Map.of());
-
-    assertSuccessfulSqlOutput(result);
-  }
-
-  @Test
-  @Timeout(value = 120, unit = TimeUnit.SECONDS)
-  void activeJobInfoReturnsSuccessWithMetadata() {
-    CallToolResult result = call("active_job_info", Map.of("limit", 3));
+  void fetchAllLibrariesNoParamToolReturnsSuccess() {
+    // fetch_all_libraries has parameters: [] — exercises the pool.query(sql) branch
+    // (no QueryOptions) that parameterized tools never hit. It also sets fetchAllRows,
+    // so this is the only live coverage of the paginated fetch path.
+    CallToolResult result = call("fetch_all_libraries", Map.of());
 
     assertSuccessfulSqlOutput(result);
   }
@@ -97,6 +99,56 @@ class SqlToolHandlerIT {
   }
 
   @Test
+  @Timeout(value = 120, unit = TimeUnit.SECONDS)
+  void describeSqlObjectReturnsGeneratedDdlSourceLines() {
+    // describe_sql_object is the only always-on builtin and the only tool that runs a CALL
+    // returning a result set, so it needs live coverage that the YAML tools do not give it.
+    CallToolResult result = callDescribeSqlObject(DDL_PROBE_OBJECT, "VIEW");
+
+    assertFalse(result.isError(),
+        "describe_sql_object failed against live Mapepire: " + firstTextBlock(result));
+    Map<String, Object> output = structured(result);
+    assertEquals(Boolean.TRUE, output.get("success"));
+
+    @SuppressWarnings("unchecked")
+    List<Object> data = (List<Object>) output.get("data");
+    assertNotNull(data);
+    assertTrue(
+        data.stream().anyMatch(row -> row instanceof Map<?, ?> m && m.containsKey("SRCDTA")),
+        "expected SRCDTA source lines in GENERATE_SQL output, got: " + data);
+
+    // The probe object's DDL runs past the default single-fetch cap, so a run without
+    // fetchAllRows would stop at DEFAULT_ROWS_TO_FETCH lines and cut the CREATE mid-statement.
+    @SuppressWarnings("unchecked")
+    Map<String, Object> metadata = (Map<String, Object>) output.get("metadata");
+    assertEquals(Boolean.FALSE, metadata.get("truncated"), "DDL should not be truncated");
+    assertTrue(data.size() > SqlToolConfig.DEFAULT_ROWS_TO_FETCH,
+        "QSYS2/" + DDL_PROBE_OBJECT + " DDL was only " + data.size() + " lines, so this test no "
+            + "longer proves the row cap is gone — pick a database object with longer DDL");
+  }
+
+  @Test
+  @Timeout(value = 120, unit = TimeUnit.SECONDS)
+  void describeSqlObjectMissingObjectIsAnErrorNotAnEmptySuccess() {
+    // GENERATE_SQL returns an empty result set instead of raising, so without the
+    // emptyResultError wiring this would come back as success with data: [].
+    CallToolResult result = callDescribeSqlObject("NO_SUCH_OBJECT_XYZ", "TABLE");
+
+    assertTrue(result.isError(), "a missing object should be reported as a failure");
+    String text = firstTextBlock(result);
+    assertTrue(text.contains(BuiltinTools.NO_DDL_GENERATED),
+        "expected the missing-object message, got: " + text);
+    // The message has to name what was searched for, since object_library defaults to QSYS2
+    // and looking in the wrong library is the mistake this error exists to explain.
+    assertTrue(text.contains("NO_SUCH_OBJECT_XYZ") && text.contains("QSYS2"),
+        "expected the searched object and library in the message, got: " + text);
+
+    Map<String, Object> output = structured(result);
+    assertEquals(Boolean.FALSE, output.get("success"));
+    assertEquals(List.of(), output.get("data"));
+  }
+
+  @Test
   @Timeout(value = 30, unit = TimeUnit.SECONDS)
   void listUserLibrariesMissingRequiredArgIsError() {
     CallToolResult result = call("list_user_libraries", Map.of());
@@ -107,6 +159,24 @@ class SqlToolHandlerIT {
     String text = firstTextBlock(result);
     assertTrue(text.contains("Missing required parameter: library_pattern"),
         "expected missing-parameter validation error, got: " + text);
+  }
+
+  /**
+   * Built directly rather than from YAML, since {@code describe_sql_object} is a built-in.
+   * The source is picked the same way the server picks it when registering built-ins.
+   */
+  private CallToolResult callDescribeSqlObject(String objectName, String objectType) {
+    SqlToolConfig tool =
+        BuiltinTools.describeSqlObject(config.sources().keySet().iterator().next());
+    return new SqlToolHandler(tool, sources, MAPPER).apply(
+        null,
+        new CallToolRequest(
+            tool.name(),
+            Map.of(
+                "object_library", "QSYS2",
+                "object_name", objectName,
+                "object_type", objectType),
+            null));
   }
 
   private CallToolResult call(String toolName, Map<String, Object> arguments) {
