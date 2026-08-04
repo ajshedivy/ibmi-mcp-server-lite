@@ -21,6 +21,17 @@ public final class BuiltinTools {
   public static final String VALIDATE_QUERY_NAME = "validate_query";
   public static final String EXECUTE_SQL_NAME = "execute_sql";
 
+  /**
+   * Row cap for the discovery tools that page in SQL ({@code list_schemas},
+   * {@code list_tables_in_schema}). Used both as the {@code limit} parameter maximum and as
+   * {@code rowsToFetch}, so the advertised limit and the number of rows actually fetched
+   * cannot drift apart.
+   */
+  private static final int LIST_MAX_ROWS = 500;
+
+  /** Matches the Node reference's wording for a {@code GENERATE_SQL} miss. */
+  public static final String NO_DDL_GENERATED = "No SQL DDL generated for the specified object";
+
   /** Object types accepted by {@code QSYS2.GENERATE_SQL}. */
   private static final List<Object> GENERATE_SQL_OBJECT_TYPES = List.of(
       "ALIAS", "CONSTRAINT", "FUNCTION", "INDEX", "MASK", "PERMISSION", "PROCEDURE",
@@ -94,9 +105,25 @@ public final class BuiltinTools {
   }
 
   /**
-   * Always-on DDL generation via {@code QSYS2.GENERATE_SQL}. Uses {@code readOnly: false}
-   * because {@code CALL} is rejected by the read-only validator; the procedure itself is
-   * descriptive. Result rows include {@code SRCDTA} source lines.
+   * Always-on DDL generation via {@code QSYS2.GENERATE_SQL}. Result rows include {@code SRCDTA}
+   * source lines; {@code fetchAllRows} keeps multi-line DDL intact instead of cutting it off at
+   * the default single-shot row cap.
+   *
+   * <p>{@code security.readOnly} and {@code annotations.readOnlyHint} deliberately disagree here
+   * and are not interchangeable. {@code security.readOnly: false} is the internal switch that
+   * stops {@link com.ibm.ibmi.mcp.sql.SqlSecurityValidator} from rejecting the {@code CALL};
+   * {@code readOnlyHint: true} is the client-facing MCP annotation, and it is accurate because
+   * no {@code SOURCE_FILE_NAME} or {@code SOURCE_STREAM_FILE} argument is passed, so the
+   * procedure returns a result set and writes nothing.
+   *
+   * <p>This is the only validator-exempt built-in. Any future {@code readOnly: false} built-in
+   * must likewise keep a constant statement with every user value bound as a parameter — the
+   * validator will not be there to catch a statement assembled from arguments.
+   *
+   * <p>{@code GENERATE_SQL} returns an empty result set rather than raising when it finds
+   * nothing, so an empty result is reported as a failure. Otherwise a lookup in the wrong
+   * library — easy to do, since {@code object_library} defaults to {@code QSYS2} — would read
+   * as "this object has no DDL" instead of "it is not there".
    */
   public static SqlToolConfig describeSqlObject(String sourceName) {
     String statement = """
@@ -145,7 +172,10 @@ public final class BuiltinTools {
                 null,
                 GENERATE_SQL_OBJECT_TYPES)),
         false,
-        Map.of("readOnlyHint", false));
+        readOnlyAnnotations(),
+        null,
+        true)
+        .withEmptyResultError(NO_DDL_GENERATED);
   }
 
   /** Lists schemas/libraries from {@code QSYS2.SYSSCHEMAS}. */
@@ -181,10 +211,12 @@ public final class BuiltinTools {
                 "include_system",
                 "Include system schemas (Q* and SYS* prefixed). Default: false.",
                 false),
-            intParam("limit", "Maximum number of rows to return (1-500).", 50, 1, 500),
+            limitParam(),
             intParam("offset", "Number of rows to skip for pagination.", 0, 0, null)),
         true,
-        readOnlyAnnotations());
+        readOnlyAnnotations(),
+        LIST_MAX_ROWS,
+        null);
   }
 
   /** Lists tables/views/PFs in a schema with row-count metadata. */
@@ -229,13 +261,18 @@ public final class BuiltinTools {
                 null,
                 128,
                 null),
-            intParam("limit", "Maximum number of rows to return (1-500).", 50, 1, 500),
+            limitParam(),
             intParam("offset", "Number of rows to skip for pagination.", 0, 0, null)),
         true,
-        readOnlyAnnotations());
+        readOnlyAnnotations(),
+        LIST_MAX_ROWS,
+        null);
   }
 
-  /** Column metadata from {@code QSYS2.SYSCOLUMNS2}. */
+  /**
+   * Column metadata from {@code QSYS2.SYSCOLUMNS2}. One row per column and no SQL row cap, so
+   * {@code fetchAllRows} is required to describe tables wider than the default fetch size.
+   */
   public static SqlToolConfig getTableColumns(String sourceName) {
     String statement = """
         SELECT COLUMN_NAME,
@@ -281,10 +318,12 @@ public final class BuiltinTools {
                 128,
                 null)),
         true,
-        readOnlyAnnotations());
+        readOnlyAnnotations(),
+        null,
+        true);
   }
 
-  /** Dependent objects via {@code SYSTOOLS.RELATED_OBJECTS}. */
+  /** Dependent objects via {@code SYSTOOLS.RELATED_OBJECTS}. No SQL row cap, so fetch-all. */
   public static SqlToolConfig getRelatedObjects(String sourceName) {
     String statement = """
         SELECT *
@@ -327,7 +366,9 @@ public final class BuiltinTools {
                 null,
                 RELATED_OBJECT_TYPE_FILTERS)),
         true,
-        readOnlyAnnotations());
+        readOnlyAnnotations(),
+        null,
+        true);
   }
 
   /**
@@ -360,7 +401,9 @@ public final class BuiltinTools {
             10_000,
             null)),
         true,
-        readOnlyAnnotations());
+        readOnlyAnnotations(),
+        null,
+        null);
   }
 
   private static String executeSqlDescription(boolean readOnly) {
@@ -397,6 +440,7 @@ public final class BuiltinTools {
         null,
         null,
         null,
+        null,
         null);
   }
 
@@ -408,6 +452,13 @@ public final class BuiltinTools {
         "category", "text2sql");
   }
 
+  /**
+   * @param rowsToFetch single-shot row cap, or {@code null} for {@link
+   *     SqlToolConfig#DEFAULT_ROWS_TO_FETCH}
+   * @param fetchAllRows pages the result set up to {@link SqlToolConfig#MAX_PAGINATION_ROWS};
+   *     only honoured when {@code rowsToFetch} is {@code null}
+   *     (see {@link SqlToolConfig#isFetchAll()})
+   */
   private static SqlToolConfig sqlTool(
       String name,
       String sourceName,
@@ -415,7 +466,9 @@ public final class BuiltinTools {
       String statement,
       List<ParameterConfig> parameters,
       boolean readOnly,
-      Map<String, Object> annotations) {
+      Map<String, Object> annotations,
+      Integer rowsToFetch,
+      Boolean fetchAllRows) {
     return new SqlToolConfig(
         name,
         true,
@@ -428,10 +481,11 @@ public final class BuiltinTools {
         null,
         annotations,
         new SecurityConfig(readOnly, 10_000, null),
-        null,
-        null,
+        rowsToFetch,
+        fetchAllRows,
         "development",
-        "text2sql");
+        "text2sql",
+        null);
   }
 
   private static ParameterConfig stringParam(
@@ -455,6 +509,16 @@ public final class BuiltinTools {
         maxLength,
         enumValues,
         null);
+  }
+
+  /** Shared {@code limit} for the tools that page via {@code FETCH FIRST :limit ROWS ONLY}. */
+  private static ParameterConfig limitParam() {
+    return intParam(
+        "limit",
+        "Maximum number of rows to return (1-" + LIST_MAX_ROWS + ").",
+        50,
+        1,
+        LIST_MAX_ROWS);
   }
 
   private static ParameterConfig intParam(

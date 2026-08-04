@@ -415,7 +415,9 @@ public final class YamlConfigLoader {
           tool.get("rowsToFetch") instanceof Number n ? n.intValue() : null,
           tool.get("fetchAllRows") instanceof Boolean b ? b : null,
           getString(tool, "domain"),
-          getString(tool, "category")));
+          getString(tool, "category"),
+          // No YAML key: an empty result is a valid answer for a query someone wrote by hand.
+          null));
     }
     return result;
   }
