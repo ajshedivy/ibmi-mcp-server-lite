@@ -365,15 +365,30 @@ public final class McpServerRunner {
       Set<String> selectedToolsets,
       boolean enableBuiltinTools,
       boolean enableExecuteSql) {
-    Set<String> builtinNames =
-        BuiltinTools.activeBuiltinNames(enableBuiltinTools, enableExecuteSql);
-    Map<String, SqlToolConfig> selected =
-        filterYamlCollisions(config.selectTools(selectedToolsets), builtinNames);
+    Map<String, SqlToolConfig> selected = filterYamlCollisions(
+        config.selectTools(selectedToolsets),
+        collidingBuiltinNames(config, enableBuiltinTools, enableExecuteSql));
     if (selected.isEmpty()) {
       log.warn("No tools selected for registration (check --toolsets / YAML contents)");
     }
     validateSelectedTools(selected.values());
     return selected;
+  }
+
+  /**
+   * Names that will actually take a YAML tool's place. Built-ins need a database source, so
+   * with no {@code sources:} block nothing registers ({@link #ensureBuiltinsRegistered}) and
+   * nothing should be filtered out either — otherwise a YAML tool named after a built-in
+   * would be dropped with no replacement.
+   *
+   * <p>Distinct from the gate-only set used by {@link #computeReloadPlan}, which protects
+   * already-registered built-ins from being torn down by a YAML diff.
+   */
+  static Set<String> collidingBuiltinNames(
+      ToolsConfig config, boolean enableBuiltinTools, boolean enableExecuteSql) {
+    return config.sources().isEmpty()
+        ? Set.of()
+        : BuiltinTools.activeBuiltinNames(enableBuiltinTools, enableExecuteSql);
   }
 
   /**
@@ -422,12 +437,12 @@ public final class McpServerRunner {
     if (config.sources().isEmpty()) {
       if (handle.enableExecuteSql()) {
         throw new IllegalArgumentException(
-            "No sources defined; execute_sql requires a database source");
+            "No sources defined; built-in tools require a database source");
       }
       return handle.registeredTools().size();
     }
 
-    String source = resolveExecuteSqlSource(config);
+    String source = resolveBuiltinSource(config);
     List<SqlToolConfig> desired = BuiltinTools.configsForGates(
         source,
         handle.enableBuiltinTools(),
@@ -455,7 +470,7 @@ public final class McpServerRunner {
    * Picks the database source for built-ins. When multiple sources exist, the first key in YAML
    * merge order ({@link ToolsConfig#sources()} insertion order) is used.
    */
-  static String resolveExecuteSqlSource(ToolsConfig config) {
+  static String resolveBuiltinSource(ToolsConfig config) {
     if (config.sources().isEmpty()) {
       throw new IllegalArgumentException(
           "No sources defined; built-in tools require a database source");
@@ -529,14 +544,20 @@ public final class McpServerRunner {
       Set<String> selectedToolsets) {
     try {
       ToolsConfig config = new YamlConfigLoader(env).loadAll(toolsPath, mergeOpts);
-      Set<String> builtinNames = BuiltinTools.activeBuiltinNames(
-          handle.enableBuiltinTools(), handle.enableExecuteSql());
-      Map<String, SqlToolConfig> selected =
-          filterYamlCollisions(config.selectTools(selectedToolsets), builtinNames);
+      Map<String, SqlToolConfig> selected = filterYamlCollisions(
+          config.selectTools(selectedToolsets),
+          collidingBuiltinNames(
+              config, handle.enableBuiltinTools(), handle.enableExecuteSql()));
       validateSelectedTools(selected.values());
       validateToolSources(handle.sources(), selected);
 
-      ToolReloadPlan plan = computeReloadPlan(handle.registeredTools(), selected, builtinNames);
+      // Gate-only set: keeps live builtins out of the YAML diff even when the reloaded
+      // config has no sources, since ensureBuiltinsRegistered would not restore them.
+      ToolReloadPlan plan = computeReloadPlan(
+          handle.registeredTools(),
+          selected,
+          BuiltinTools.activeBuiltinNames(
+              handle.enableBuiltinTools(), handle.enableExecuteSql()));
       if (plan.toRemove().isEmpty() && plan.toAdd().isEmpty()) {
         log.debug("YAML reload: no tool changes detected");
         return false;

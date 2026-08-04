@@ -237,6 +237,47 @@ class McpServerRunnerTest {
   }
 
   @Test
+  void yamlToolKeptWhenNoBuiltinCanReplaceIt() {
+    // Built-ins need a database source. Without one nothing registers, so filtering the
+    // YAML tool out would make it disappear with no replacement.
+    SqlToolConfig yamlValidateQuery = tool(
+        BuiltinTools.VALIDATE_QUERY_NAME, "YAML duplicate", "SELECT 1 FROM SYSIBM.SYSDUMMY1");
+    ToolsConfig config = new ToolsConfig(
+        Map.of(), Map.of(BuiltinTools.VALIDATE_QUERY_NAME, yamlValidateQuery), Map.of());
+
+    handle = McpServerRunner.startForTests(config, Set.of(), true, false, true);
+
+    SqlToolConfig registered =
+        handle.registeredTools().get(BuiltinTools.VALIDATE_QUERY_NAME);
+    assertNotNull(registered, "YAML tool should survive when no builtin replaces it");
+    assertEquals(yamlValidateQuery, registered);
+  }
+
+  @Test
+  void noBuiltinsRegisterWithoutSources() {
+    ToolsConfig config = new ToolsConfig(
+        Map.of(), Map.of("tool_a", tool("tool_a", "a", "SELECT 1 FROM SYSIBM.SYSDUMMY1")), Map.of());
+
+    handle = McpServerRunner.startForTests(config, Set.of(), true, false, true);
+
+    assertEquals(Set.of("tool_a"), toolNames(handle));
+  }
+
+  @Test
+  void collidingBuiltinNames_emptyWithoutSourcesAndPopulatedWithThem(@TempDir Path tempDir)
+      throws Exception {
+    ToolsConfig noSources = new ToolsConfig(Map.of(), Map.of(), Map.of());
+    assertTrue(McpServerRunner.collidingBuiltinNames(noSources, true, true).isEmpty());
+
+    Path yaml = tempDir.resolve("tools.yaml");
+    Files.writeString(yaml, yamlWithTools("tool_a"));
+    ToolsConfig withSources = new YamlConfigLoader(Map.of()).load(yaml);
+    assertEquals(
+        BuiltinTools.activeBuiltinNames(true, true),
+        McpServerRunner.collidingBuiltinNames(withSources, true, true));
+  }
+
+  @Test
   void executeSqlAbsentWhenGateDisabled(@TempDir Path tempDir) throws Exception {
     Path yaml = tempDir.resolve("tools.yaml");
     Files.writeString(yaml, yamlWithTools("tool_a"));
@@ -302,6 +343,7 @@ class McpServerRunnerTest {
         null,
         null,
         null,
+        null,
         null);
     assertThrows(SecurityException.class,
         () -> McpServerRunner.validateSelectedTools(List.of(multiParamPlaceholder)));
@@ -316,7 +358,7 @@ class McpServerRunnerTest {
   }
 
   @Test
-  void resolveExecuteSqlSource_picksFirstSourceInMergeOrder(@TempDir Path tempDir) throws Exception {
+  void resolveBuiltinSource_picksFirstSourceInMergeOrder(@TempDir Path tempDir) throws Exception {
     Path yaml = tempDir.resolve("tools.yaml");
     Files.writeString(yaml, """
         sources:
@@ -336,15 +378,15 @@ class McpServerRunnerTest {
         """);
     ToolsConfig config = new YamlConfigLoader(Map.of()).load(yaml);
     // First key in YAML merge insertion order is the deterministic default.
-    assertEquals("alpha", McpServerRunner.resolveExecuteSqlSource(config));
+    assertEquals("alpha", McpServerRunner.resolveBuiltinSource(config));
   }
 
   @Test
-  void resolveExecuteSqlSource_throwsWhenNoSources() {
+  void resolveBuiltinSource_throwsWhenNoSources() {
     ToolsConfig config = new ToolsConfig(Map.of(), Map.of(), Map.of());
     IllegalArgumentException e = assertThrows(
         IllegalArgumentException.class,
-        () -> McpServerRunner.resolveExecuteSqlSource(config));
+        () -> McpServerRunner.resolveBuiltinSource(config));
     assertTrue(e.getMessage().contains("No sources defined"));
   }
 
@@ -674,7 +716,7 @@ class McpServerRunnerTest {
     return new SqlToolConfig(
         name, true, "ibmi-system", description, statement, parameters,
         null, null, null, Map.of("readOnlyHint", true), SecurityConfig.DEFAULTS,
-        null, null, null, null);
+        null, null, null, null, null);
   }
 
   private static SqlToolConfig tool(String name, String description, String statement) {
