@@ -150,8 +150,10 @@ class HttpTransportIntegrationTest {
 
     JsonNode tools = extractJsonRpcResult(listResponse.body()).path("tools");
     assertTrue(tools.isArray());
-    assertEquals(1, tools.size());
-    assertEquals("ping", tools.get(0).path("name").asText());
+    assertEquals(2, tools.size());
+    Set<String> names = new java.util.LinkedHashSet<>();
+    tools.forEach(t -> names.add(t.path("name").asText()));
+    assertEquals(Set.of("ping", "describe_sql_object"), names);
   }
 
   @Test
@@ -174,15 +176,18 @@ class HttpTransportIntegrationTest {
 
     JsonNode tools = extractJsonRpcResult(listResponse.body()).path("tools");
     assertTrue(tools.isArray());
-    assertEquals(2, tools.size());
+    assertEquals(3, tools.size());
 
+    Set<String> names = new java.util.LinkedHashSet<>();
     JsonNode executeSql = null;
     for (JsonNode tool : tools) {
-      if ("execute_sql".equals(tool.path("name").asText())) {
+      String name = tool.path("name").asText();
+      names.add(name);
+      if ("execute_sql".equals(name)) {
         executeSql = tool;
-        break;
       }
     }
+    assertEquals(Set.of("ping", "describe_sql_object", "execute_sql"), names);
     assertNotNull(executeSql, "execute_sql should appear in tools/list when gate is enabled");
 
     JsonNode required = executeSql.path("inputSchema").path("required");

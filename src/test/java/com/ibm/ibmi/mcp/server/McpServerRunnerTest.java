@@ -71,6 +71,7 @@ class McpServerRunnerTest {
         McpServerRunner.ToolSpecContext.create(),
         new ConcurrentHashMap<>(),
         false,
+        false,
         true);
     testHandle.attachServer(server);
     assertDoesNotThrow(() -> {
@@ -161,12 +162,78 @@ class McpServerRunnerTest {
     MergeOptions mergeOpts = MergeOptions.fromEnv(env);
 
     handle = startFromYaml(yaml, env);
-    assertEquals(Set.of("tool_a"), toolNames(handle));
+    assertEquals(Set.of(BuiltinTools.DESCRIBE_SQL_OBJECT_NAME, "tool_a"), toolNames(handle));
 
     assertFalse(McpServerRunner.reload(
         handle, yaml.toString(), env, mergeOpts, Set.of()));
-    assertEquals(Set.of("tool_a"), toolNames(handle));
-    assertEquals(1, handle.registeredTools().size());
+    assertEquals(Set.of(BuiltinTools.DESCRIBE_SQL_OBJECT_NAME, "tool_a"), toolNames(handle));
+    assertEquals(2, handle.registeredTools().size());
+  }
+
+  @Test
+  void describeSqlObjectAlwaysRegisteredWhenSourcesExist(@TempDir Path tempDir) throws Exception {
+    Path yaml = tempDir.resolve("tools.yaml");
+    Files.writeString(yaml, yamlWithTools("tool_a"));
+    handle = startFromYaml(yaml, Map.of(), false, false, true);
+
+    assertTrue(toolNames(handle).contains(BuiltinTools.DESCRIBE_SQL_OBJECT_NAME));
+    assertFalse(toolNames(handle).contains(BuiltinTools.LIST_SCHEMAS_NAME));
+    assertFalse(toolNames(handle).contains(BuiltinTools.EXECUTE_SQL_NAME));
+  }
+
+  @Test
+  void builtinToolsRegistersDiscoverySet(@TempDir Path tempDir) throws Exception {
+    Path yaml = tempDir.resolve("tools.yaml");
+    Files.writeString(yaml, yamlWithTools("tool_a"));
+    handle = startFromYaml(yaml, Map.of(), true, false, true);
+
+    assertTrue(toolNames(handle).containsAll(Set.of(
+        BuiltinTools.DESCRIBE_SQL_OBJECT_NAME,
+        BuiltinTools.LIST_SCHEMAS_NAME,
+        BuiltinTools.LIST_TABLES_IN_SCHEMA_NAME,
+        BuiltinTools.GET_TABLE_COLUMNS_NAME,
+        BuiltinTools.GET_RELATED_OBJECTS_NAME,
+        BuiltinTools.VALIDATE_QUERY_NAME,
+        "tool_a")));
+    assertFalse(toolNames(handle).contains(BuiltinTools.EXECUTE_SQL_NAME));
+  }
+
+  @Test
+  void builtinToolsAndExecuteSqlRegisterFullChain(@TempDir Path tempDir) throws Exception {
+    Path yaml = tempDir.resolve("tools.yaml");
+    Files.writeString(yaml, yamlWithTools("tool_a"));
+    handle = startFromYaml(yaml, Map.of(), true, true, true);
+
+    assertTrue(toolNames(handle).containsAll(BuiltinTools.activeBuiltinNames(true, true)));
+  }
+
+  @Test
+  void yamlToolSkippedWhenBuiltinNameCollides(@TempDir Path tempDir) throws Exception {
+    Path yaml = tempDir.resolve("tools.yaml");
+    Files.writeString(yaml, """
+        sources:
+          ibmi-system:
+            host: localhost
+            user: user
+            password: pass
+        tools:
+          list_tables_in_schema:
+            source: ibmi-system
+            description: "YAML duplicate"
+            statement: SELECT 1 FROM SYSIBM.SYSDUMMY1
+          other_tool:
+            source: ibmi-system
+            description: "kept"
+            statement: SELECT 1 FROM SYSIBM.SYSDUMMY1
+        """);
+    handle = startFromYaml(yaml, Map.of(), true, false, true);
+
+    assertTrue(handle.registeredTools().containsKey(BuiltinTools.LIST_TABLES_IN_SCHEMA_NAME));
+    SqlToolConfig registered =
+        handle.registeredTools().get(BuiltinTools.LIST_TABLES_IN_SCHEMA_NAME);
+    assertTrue(registered.statement().contains("QSYS2.SYSTABLES"),
+        "builtin SQL should win over YAML");
+    assertTrue(toolNames(handle).contains("other_tool"));
   }
 
   @Test
@@ -175,7 +242,7 @@ class McpServerRunnerTest {
     Files.writeString(yaml, yamlWithTools("tool_a"));
     handle = startFromYaml(yaml, Map.of(), false, true);
 
-    assertEquals(Set.of("tool_a"), toolNames(handle));
+    assertEquals(Set.of(BuiltinTools.DESCRIBE_SQL_OBJECT_NAME, "tool_a"), toolNames(handle));
     assertFalse(toolNames(handle).contains(BuiltinTools.EXECUTE_SQL_NAME));
     assertFalse(handle.registeredTools().containsKey(BuiltinTools.EXECUTE_SQL_NAME));
   }
@@ -190,6 +257,7 @@ class McpServerRunnerTest {
     assertTrue(handle.registeredTools().containsKey(BuiltinTools.EXECUTE_SQL_NAME));
     assertEquals("ibmi-system",
         handle.registeredTools().get(BuiltinTools.EXECUTE_SQL_NAME).source());
+    assertTrue(toolNames(handle).contains(BuiltinTools.DESCRIBE_SQL_OBJECT_NAME));
   }
 
   @Test
@@ -290,19 +358,28 @@ class McpServerRunnerTest {
   }
 
   @Test
-  void computeReloadPlan_ignoresRegisteredExecuteSqlBuiltin() {
+  void computeReloadPlan_ignoresRegisteredBuiltinNames() {
     SqlToolConfig toolA = tool("tool_a", "A", "SELECT 1 FROM SYSIBM.SYSDUMMY1");
     SqlToolConfig executeSql = BuiltinTools.executeSql("ibmi-system", true);
+    SqlToolConfig describe = BuiltinTools.describeSqlObject("ibmi-system");
     Map<String, SqlToolConfig> registered = Map.of(
         "tool_a", toolA,
-        BuiltinTools.EXECUTE_SQL_NAME, executeSql);
+        BuiltinTools.EXECUTE_SQL_NAME, executeSql,
+        BuiltinTools.DESCRIBE_SQL_OBJECT_NAME, describe);
     Map<String, SqlToolConfig> selected = Map.of("tool_a", toolA);
 
-    McpServerRunner.ToolReloadPlan plan =
-        McpServerRunner.computeReloadPlan(registered, selected);
+    McpServerRunner.ToolReloadPlan plan = McpServerRunner.computeReloadPlan(
+        registered, selected, BuiltinTools.activeBuiltinNames(false, true));
 
     assertTrue(plan.toRemove().isEmpty());
     assertTrue(plan.toAdd().isEmpty());
+  }
+
+  @Test
+  void validateSelectedTools_acceptsDescribeSqlObjectCall() {
+    assertDoesNotThrow(() ->
+        McpServerRunner.validateSelectedTools(
+            List.of(BuiltinTools.describeSqlObject("ibmi-system"))));
   }
 
   @Test
@@ -313,13 +390,14 @@ class McpServerRunnerTest {
     MergeOptions mergeOpts = MergeOptions.fromEnv(env);
 
     handle = startFromYaml(yaml, env);
-    assertEquals(Set.of("tool_a"), toolNames(handle));
+    assertEquals(Set.of(BuiltinTools.DESCRIBE_SQL_OBJECT_NAME, "tool_a"), toolNames(handle));
 
     Files.writeString(yaml, yamlWithTools("tool_a", "tool_b"));
     assertTrue(McpServerRunner.reload(
         handle, yaml.toString(), env, mergeOpts, Set.of()));
-    assertEquals(Set.of("tool_a", "tool_b"), toolNames(handle));
-    assertEquals(2, handle.registeredTools().size());
+    assertEquals(
+        Set.of(BuiltinTools.DESCRIBE_SQL_OBJECT_NAME, "tool_a", "tool_b"), toolNames(handle));
+    assertEquals(3, handle.registeredTools().size());
   }
 
   @Test
@@ -335,13 +413,16 @@ class McpServerRunnerTest {
     String toolsPath = tempDir.toString();
 
     handle = startFromDirectory(tempDir, env);
-    assertEquals(Set.of("tool_a", "tool_b"), toolNames(handle));
+    assertEquals(
+        Set.of(BuiltinTools.DESCRIBE_SQL_OBJECT_NAME, "tool_a", "tool_b"), toolNames(handle));
 
     McpServerRunner.attachYamlWatcher(handle, toolsPath, env, mergeOpts, Set.of());
 
     Files.writeString(toolsA, yamlWithTools("tool_a", "tool_c"));
-    await(() -> handle.registeredTools().size() == 3, 5_000);
-    assertEquals(Set.of("tool_a", "tool_b", "tool_c"), toolNames(handle));
+    await(() -> handle.registeredTools().size() == 4, 5_000);
+    assertEquals(
+        Set.of(BuiltinTools.DESCRIBE_SQL_OBJECT_NAME, "tool_a", "tool_b", "tool_c"),
+        toolNames(handle));
   }
 
   @Test
@@ -356,13 +437,16 @@ class McpServerRunnerTest {
     String glob = tempDir.toString() + "/*.yaml";
 
     handle = startFromGlob(glob, env);
-    assertEquals(Set.of("tool_a", "tool_b"), toolNames(handle));
+    assertEquals(
+        Set.of(BuiltinTools.DESCRIBE_SQL_OBJECT_NAME, "tool_a", "tool_b"), toolNames(handle));
 
     McpServerRunner.attachYamlWatcher(handle, glob, env, mergeOpts, Set.of());
 
     Files.writeString(toolsB, yamlWithToolsOnly("tool_b", "tool_d"));
     await(() -> handle.registeredTools().containsKey("tool_d"), 5_000);
-    assertEquals(Set.of("tool_a", "tool_b", "tool_d"), toolNames(handle));
+    assertEquals(
+        Set.of(BuiltinTools.DESCRIBE_SQL_OBJECT_NAME, "tool_a", "tool_b", "tool_d"),
+        toolNames(handle));
   }
 
   @Test
@@ -375,12 +459,15 @@ class McpServerRunnerTest {
     MergeOptions mergeOpts = MergeOptions.fromEnv(env);
 
     handle = startFromDirectory(tempDir, env);
-    assertEquals(Set.of("tool_a", "tool_b"), toolNames(handle));
+    assertEquals(
+        Set.of(BuiltinTools.DESCRIBE_SQL_OBJECT_NAME, "tool_a", "tool_b"), toolNames(handle));
 
     Files.writeString(toolsA, yamlWithTools("tool_a", "tool_c"));
     assertTrue(McpServerRunner.reload(
         handle, tempDir.toString(), env, mergeOpts, Set.of()));
-    assertEquals(Set.of("tool_a", "tool_b", "tool_c"), toolNames(handle));
+    assertEquals(
+        Set.of(BuiltinTools.DESCRIBE_SQL_OBJECT_NAME, "tool_a", "tool_b", "tool_c"),
+        toolNames(handle));
   }
 
   @Test
@@ -407,7 +494,7 @@ class McpServerRunnerTest {
     assertFalse(McpServerRunner.reload(
         handle, yaml.toString(), env, mergeOpts, Set.of()));
     assertEquals(before, toolNames(handle));
-    assertEquals(1, handle.registeredTools().size());
+    assertEquals(2, handle.registeredTools().size());
   }
 
   @Test
@@ -439,7 +526,7 @@ class McpServerRunnerTest {
     assertFalse(McpServerRunner.reload(
         handle, yaml.toString(), env, mergeOpts, Set.of()));
     assertEquals(before, toolNames(handle));
-    assertEquals(1, handle.registeredTools().size());
+    assertEquals(2, handle.registeredTools().size());
   }
 
   @Test
@@ -451,8 +538,12 @@ class McpServerRunnerTest {
 
     handle = startFromYaml(yaml, env);
     SqlToolConfig toolA = handle.registeredTools().get("tool_a");
+    SqlToolConfig describe =
+        handle.registeredTools().get(BuiltinTools.DESCRIBE_SQL_OBJECT_NAME);
     SqlToolConfig toolB = tool("tool_b", "tool_b", "SELECT 1 FROM SYSIBM.SYSDUMMY1");
-    Map<String, SqlToolConfig> previous = Map.of("tool_a", toolA);
+    Map<String, SqlToolConfig> previous = Map.of(
+        "tool_a", toolA,
+        BuiltinTools.DESCRIBE_SQL_OBJECT_NAME, describe);
 
     McpServerRunner.applyReloadPlan(
         handle,
@@ -460,11 +551,13 @@ class McpServerRunnerTest {
         Map.of("tool_b", toolB),
         new McpServerRunner.ToolReloadPlan(Set.of("tool_a"), Set.of("tool_b")));
 
-    assertEquals(Set.of("tool_b"), toolNames(handle));
+    assertEquals(
+        Set.of(BuiltinTools.DESCRIBE_SQL_OBJECT_NAME, "tool_b"), toolNames(handle));
 
     McpServerRunner.rollbackTools(handle, previous);
 
-    assertEquals(Set.of("tool_a"), toolNames(handle));
+    assertEquals(
+        Set.of(BuiltinTools.DESCRIBE_SQL_OBJECT_NAME, "tool_a"), toolNames(handle));
     assertEquals(previous, Map.copyOf(handle.registeredTools()));
   }
 
@@ -496,13 +589,23 @@ class McpServerRunnerTest {
   }
 
   private static McpServerRunner.ServerHandle startFromYaml(Path yaml, Map<String, String> env) {
-    return startFromYaml(yaml, env, false, true);
+    return startFromYaml(yaml, env, false, false, true);
   }
 
   private static McpServerRunner.ServerHandle startFromYaml(
       Path yaml, Map<String, String> env, boolean enableExecuteSql, boolean executeSqlReadonly) {
+    return startFromYaml(yaml, env, false, enableExecuteSql, executeSqlReadonly);
+  }
+
+  private static McpServerRunner.ServerHandle startFromYaml(
+      Path yaml,
+      Map<String, String> env,
+      boolean enableBuiltinTools,
+      boolean enableExecuteSql,
+      boolean executeSqlReadonly) {
     ToolsConfig config = new YamlConfigLoader(env).load(yaml);
-    return McpServerRunner.startForTests(config, Set.of(), enableExecuteSql, executeSqlReadonly);
+    return McpServerRunner.startForTests(
+        config, Set.of(), enableBuiltinTools, enableExecuteSql, executeSqlReadonly);
   }
 
   private static McpServerRunner.ServerHandle startFromDirectory(Path dir, Map<String, String> env) {
