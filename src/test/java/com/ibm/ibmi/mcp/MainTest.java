@@ -218,6 +218,38 @@ class MainTest {
   }
 
   @Test
+  void resolveBuiltinTools_defaultsToDisabledWhenUnset() {
+    assertFalse(Main.resolveBuiltinTools(Map.of(), false));
+  }
+
+  @Test
+  void resolveBuiltinTools_readsTruthyValuesFromMergedEnv() {
+    assertTrue(Main.resolveBuiltinTools(Map.of("IBMI_ENABLE_DEFAULT_TOOLS", "true"), false));
+    assertTrue(Main.resolveBuiltinTools(Map.of("IBMI_ENABLE_DEFAULT_TOOLS", "TRUE"), false));
+    assertTrue(Main.resolveBuiltinTools(Map.of("IBMI_ENABLE_DEFAULT_TOOLS", "1"), false));
+  }
+
+  @Test
+  void resolveBuiltinTools_disablesForOtherExplicitValues() {
+    assertFalse(Main.resolveBuiltinTools(Map.of("IBMI_ENABLE_DEFAULT_TOOLS", "false"), false));
+    assertFalse(Main.resolveBuiltinTools(Map.of("IBMI_ENABLE_DEFAULT_TOOLS", "0"), false));
+  }
+
+  @Test
+  void resolveBuiltinTools_cliFlagOverridesEnv() {
+    assertTrue(Main.resolveBuiltinTools(Map.of("IBMI_ENABLE_DEFAULT_TOOLS", "false"), true));
+    assertTrue(Main.resolveBuiltinTools(Map.of(), true));
+  }
+
+  @Test
+  void resolveBuiltinTools_readsFromDotEnvFile(@TempDir Path tempDir) throws Exception {
+    Path envFile = tempDir.resolve(".env");
+    Files.writeString(envFile, "IBMI_ENABLE_DEFAULT_TOOLS=true\n");
+    Map<String, String> env = com.ibm.ibmi.mcp.util.DotEnv.environment(envFile);
+    assertTrue(Main.resolveBuiltinTools(env, false));
+  }
+
+  @Test
   void resolveExecuteSql_defaultsToDisabledWhenUnset() {
     assertFalse(Main.resolveExecuteSql(Map.of(), false));
   }

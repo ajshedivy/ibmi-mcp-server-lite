@@ -53,6 +53,7 @@ public final class Main {
              --list-tools               Print all enabled tools defined in the YAML file and exit
              --env-file <path>          .env file for ${VAR} interpolation and env vars (default: ./.env)
              --no-reload                Disable hot-reload of tools YAML (env: YAML_AUTO_RELOAD)
+             --builtin-tools            Enable built-in schema discovery tools (overrides env: IBMI_ENABLE_DEFAULT_TOOLS)
              --execute-sql              Enable the execute_sql tool (overrides env: IBMI_ENABLE_EXECUTE_SQL)
              --version                  Print version and exit
              --transport <stdio|http>   Transport (default: stdio; env: MCP_TRANSPORT_TYPE)
@@ -79,6 +80,7 @@ public final class Main {
     boolean listToolsets = false;
     boolean listTools = false;
     boolean noReload = false;
+    boolean builtinTools = false;
     boolean executeSql = false;
 
     for (int i = 0; i < args.length; i++) {
@@ -89,6 +91,7 @@ public final class Main {
         case "--list-toolsets" -> listToolsets = true;
         case "--list-tools" -> listTools = true;
         case "--no-reload" -> noReload = true;
+        case "--builtin-tools" -> builtinTools = true;
         case "--execute-sql" -> executeSql = true;
         case "--transport" -> transport = requireValue(args, ++i, "--transport");
         case "--http-port" -> httpPort = requireValue(args, ++i, "--http-port");
@@ -160,6 +163,7 @@ public final class Main {
     }
 
     boolean yamlAutoReload = resolveYamlAutoReload(env, noReload);
+    boolean enableBuiltinTools = resolveBuiltinTools(env, builtinTools);
     boolean enableExecuteSql = resolveExecuteSql(env, executeSql);
     boolean executeSqlReadonly = resolveExecuteSqlReadonly(env);
 
@@ -177,12 +181,14 @@ public final class Main {
 
     if (httpMode) {
       handleSlot[0] = McpServerRunner.startHttp(
-          config, selected, transportConfig, handleSlot, enableExecuteSql, executeSqlReadonly);
+          config, selected, transportConfig, handleSlot,
+          enableBuiltinTools, enableExecuteSql, executeSqlReadonly);
     } else {
       InputStream stdin = new EofNotifyingInputStream(
           System.in, () -> new Thread(shutdown, "stdin-eof").start());
       handleSlot[0] = McpServerRunner.start(
-          config, selected, stdin, handleSlot, enableExecuteSql, executeSqlReadonly);
+          config, selected, stdin, handleSlot,
+          enableBuiltinTools, enableExecuteSql, executeSqlReadonly);
     }
 
     if (yamlAutoReload) {
@@ -345,6 +351,21 @@ public final class Main {
     System.err.println("error: " + message);
     System.err.println(USAGE);
     System.exit(2);
+  }
+
+  /**
+   * Whether to register the built-in schema discovery tools ({@code list_schemas},
+   * {@code list_tables_in_schema}, {@code get_table_columns}, {@code get_related_objects},
+   * {@code validate_query}).
+   *
+   * <p>Resolution order: {@code --builtin-tools} enables; otherwise read
+   * {@code IBMI_ENABLE_DEFAULT_TOOLS} from the merged environment. Default off when unset.
+   */
+  static boolean resolveBuiltinTools(Map<String, String> env, boolean builtinToolsCli) {
+    if (builtinToolsCli) {
+      return true;  // --builtin-tools wins over env
+    }
+    return isTruthy(env.get("IBMI_ENABLE_DEFAULT_TOOLS"));  // default false when unset
   }
 
   static boolean resolveExecuteSql(Map<String, String> env, boolean executeSqlCli) {
