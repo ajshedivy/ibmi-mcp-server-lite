@@ -27,7 +27,7 @@ feature, and close the corresponding issue if you implement one.
 
 # Full-protocol smoke test against a live IBM i (initialize → tools/list → tools/call).
 # Needs .env (cp .env.example .env). Spawns the built jar, so package first.
-python3 scripts/smoke-test.py
+python3 scripts/smoke-test.py                  # optional: --builtin-tools --execute-sql
 
 # Java pipeline integration tests (SourceManager → SqlToolHandler against live Mapepire).
 # Needs .env; skipped (not failed) when DB2i_* are missing. Does not replace smoke-test.py.

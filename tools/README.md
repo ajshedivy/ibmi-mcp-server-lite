@@ -14,11 +14,19 @@ java -jar target/ibmi-mcp-server-lite-0.1.0.jar --tools tools
 
 # Subset by toolset:
 java -jar target/ibmi-mcp-server-lite-0.1.0.jar --tools tools --toolsets performance,discovery
+
+# Schema discovery builtins (optional; see README):
+java -jar target/ibmi-mcp-server-lite-0.1.0.jar --tools tools --builtin-tools
 ```
 
 Every pack redefines `sources.ibmi-system`. Directory merge therefore needs
 `YAML_ALLOW_DUPLICATE_SOURCES=true` (last file wins). Keep
 `YAML_ALLOW_DUPLICATE_TOOLS=false` so tool names stay unique.
+
+**Overlap with built-ins:** `developer/text2sql.yaml` defines `list_tables_in_schema` and
+`validate_query`. When `--builtin-tools` (or `IBMI_ENABLE_DEFAULT_TOOLS=true`) is on,
+those YAML tools are **skipped** in favor of the Java builtins (warning on stderr).
+`sample_rows` and `get_table_statistics` in the same pack are unaffected.
 
 Connection fields use `${DB2i_HOST}`, `${DB2i_USER}`, `${DB2i_PASS}`, and
 `${DB2i_PORT}` (defaults to Mapepire `8076` when unset).
@@ -47,7 +55,7 @@ registered (`enabled: false` → omitted from `tools/list`):
 |------|------|--------|
 | `repopulate_special_authority_detail` | `security/security-ops.yaml` | Write: `REFRESH TABLE` |
 | `execute_impersonation_lockdown` | `security/security-ops.yaml` | Write: `qcmdexc` / `GRTOBJAUT` |
-| `describe_object` | `sys-admin/sys-admin.yaml` | `CALL`-based; out until builtins / explicit write allowance |
+| `describe_object` | `sys-admin/sys-admin.yaml` | `CALL`-based sys-admin helper; prefer always-on builtin `describe_sql_object` for DDL |
 
 ## Drift
 

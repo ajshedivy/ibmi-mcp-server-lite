@@ -225,6 +225,16 @@ a newly added source will fail reload until the process is restarted.
 - Lightweight tokenizer for read-only validation (not the reference's full vscode-db2i
   parser); top-level statement-type classification only — nested DML inside a `SELECT` or
   `WITH` is not checked separately (same as the reference primary path).
-- No `typescript_tools` section. The reference's `generate_sql` text-to-SQL toolset is not
-  ported. The opt-in built-in `execute_sql` tool **is** available via `--execute-sql` or
-  `IBMI_ENABLE_EXECUTE_SQL=true` (read-only by default via `IBMI_EXECUTE_SQL_READONLY`).
+- No `typescript_tools` YAML section. Built-in schema discovery / text-to-SQL tools are
+  registered from Java (`BuiltinTools`) instead:
+  - `describe_sql_object` — always on when sources exist (`QSYS2.GENERATE_SQL`; returns
+    result rows including `SRCDTA`, not a concatenated DDL string like Node)
+  - `list_schemas`, `list_tables_in_schema`, `get_table_columns`, `get_related_objects`,
+    `validate_query` — via `--builtin-tools` / `IBMI_ENABLE_DEFAULT_TOOLS=true`
+  - `execute_sql` — via `--execute-sql` / `IBMI_ENABLE_EXECUTE_SQL=true` (read-only by
+    default via `IBMI_EXECUTE_SQL_READONLY`); **not** auto-enabled by `--builtin-tools`
+    (Node enables execute SQL when default-tools is on)
+  - `validate_query` MVP runs `QSYS2.PARSE_STATEMENT` only; catalog hallucination
+    cross-checks (SYSTABLES/SYSCOLUMNS/SYSROUTINES) are not ported yet
+  - When a YAML tool name collides with a registering built-in, the YAML tool is skipped
+    with a warning (builtins win)

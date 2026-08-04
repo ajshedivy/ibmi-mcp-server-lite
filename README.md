@@ -37,6 +37,7 @@ java -jar target/ibmi-mcp-server-lite-0.1.0.jar --tools tools --list-toolsets
 
 # 4. End-to-end smoke test over real stdio JSON-RPC (initialize → tools/list → tools/call)
 python3 scripts/smoke-test.py
+#    Optional: --builtin-tools and/or --execute-sql to exercise those gates
 ```
 
 > **TLS note:** with mapepire-sdk 0.1.3+, `ignore-unauthorized: true` relaxes both
@@ -156,28 +157,42 @@ Key semantics (full details in [docs/yaml-tools-reference.md](docs/yaml-tools-re
   a tool sets `security.readOnly: false`.
 - `--toolsets a,b` (or `SELECTED_TOOLSETS`) registers only the tools in those toolsets.
 
-### Built-in `execute_sql` tool (opt-in)
+### Built-in schema discovery tools
 
-The reference server ships an ad-hoc `execute_sql` escape hatch for exploration and
-text-to-SQL workflows. The lite server registers the same built-in when enabled:
+The reference server’s text-to-SQL discovery chain is available as Java built-ins
+(same `SqlToolHandler` path as YAML tools — output shape `{success, data, metadata}`):
+
+| Tool | Gate |
+|---|---|
+| `describe_sql_object` | **Always on** when YAML sources exist (`QSYS2.GENERATE_SQL`) |
+| `list_schemas`, `list_tables_in_schema`, `get_table_columns`, `get_related_objects`, `validate_query` | `--builtin-tools` / `IBMI_ENABLE_DEFAULT_TOOLS=true` |
+| `execute_sql` | `--execute-sql` / `IBMI_ENABLE_EXECUTE_SQL=true` (separate; not auto-enabled by `--builtin-tools`) |
+
+Intended agent flow: `list_schemas` → `list_tables_in_schema` → `get_table_columns` →
+`get_related_objects` → `validate_query` → `execute_sql`.
 
 ```bash
-# CLI (wins over env)
-java -jar target/ibmi-mcp-server-lite-0.1.0.jar --tools tools --execute-sql
+# Discovery pack only
+java -jar target/ibmi-mcp-server-lite-0.1.0.jar --tools tools --builtin-tools
+
+# Full chain (discovery + ad-hoc SQL)
+java -jar target/ibmi-mcp-server-lite-0.1.0.jar --tools tools --builtin-tools --execute-sql
 
 # Or via .env / process env
+IBMI_ENABLE_DEFAULT_TOOLS=true
 IBMI_ENABLE_EXECUTE_SQL=true
 IBMI_EXECUTE_SQL_READONLY=true   # default; set false to allow writes
 ```
 
-When enabled, `execute_sql` appears in `tools/list` alongside YAML tools. It accepts a
-single required `sql` string, uses direct substitution (`:sql` → verbatim SQL), and
-re-validates the substituted statement at call time (read-only by default: only
-`SELECT`/`WITH` pass). If multiple sources are defined, the first source key in YAML
-merge order is used.
+`execute_sql` accepts a single required `sql` string, uses direct substitution
+(`:sql` → verbatim SQL), and re-validates at call time (read-only by default: only
+`SELECT`/`WITH` pass). Built-ins use the first source key in YAML merge order when
+multiple sources are defined.
 
-Do not define a YAML tool named `execute_sql`. When the built-in is enabled, it is
-registered programmatically and takes precedence over any same-named YAML entry.
+**Name collisions:** if a YAML tool shares a name with a registering built-in, the YAML
+tool is skipped and a warning is logged (builtins win). With `--builtin-tools`, this
+affects vendored `list_tables_in_schema` and `validate_query` in
+`tools/developer/text2sql.yaml`.
 
 - **Hot-reload** (default on): when any resolved tools YAML file changes on disk, the server
   re-merges and updates the live tool registry without restarting. See
@@ -231,6 +246,7 @@ Desktop) that holds the stdio session open.
 | `--list-toolsets` | — | Print toolsets and exit |
 | `--list-tools` | — | Print all enabled tools and exit |
 | `--no-reload` | `YAML_AUTO_RELOAD` | Disable hot-reload of tools YAML (env default: on) |
+| `--builtin-tools` | `IBMI_ENABLE_DEFAULT_TOOLS` | Register built-in schema discovery tools (CLI wins; default off) |
 | `--execute-sql` | `IBMI_ENABLE_EXECUTE_SQL` | Register the built-in `execute_sql` tool (CLI wins; default off) |
 | — | `IBMI_EXECUTE_SQL_READONLY` | Read-only mode for `execute_sql` (default on: `true` or `1`) |
 | `--env-file <path>` | — | `.env` file for `${VAR}` interpolation (default `./.env`) |
@@ -276,7 +292,7 @@ JSON text block and as MCP `structuredContent`:
   (`SourceManager` → `SqlToolHandler`) against a live Mapepire (needs `.env`; skipped,
   not failed, when `DB2i_*` are missing). See
   [docs/running-on-ibmi.md](docs/running-on-ibmi.md#junit-integration-tests-live-mapepire).
-- `python3 scripts/smoke-test.py` — full-protocol test against a live IBM i (needs `.env`).
+- `python3 scripts/smoke-test.py [--builtin-tools] [--execute-sql]` — full-protocol test against a live IBM i (needs `.env`).
 
 ## Running on IBM i
 
