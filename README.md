@@ -171,6 +171,11 @@ The reference server’s text-to-SQL discovery chain is available as Java built-
 Intended agent flow: `list_schemas` → `list_tables_in_schema` → `get_table_columns` →
 `get_related_objects` → `validate_query` → `execute_sql`.
 
+`describe_sql_object` reports a missing object as an error naming the object and library it
+searched, rather than as a successful empty result — `QSYS2.GENERATE_SQL` returns no rows
+instead of raising, and `object_library` defaults to `QSYS2`, so looking in the wrong library
+is easy to do. The discovery tools that filter still return an empty result as a success.
+
 ```bash
 # Discovery pack only
 java -jar target/ibmi-mcp-server-lite-0.1.0.jar --tools tools --builtin-tools
@@ -192,7 +197,22 @@ multiple sources are defined.
 **Name collisions:** if a YAML tool shares a name with a registering built-in, the YAML
 tool is skipped and a warning is logged (builtins win). With `--builtin-tools`, this
 affects vendored `list_tables_in_schema` and `validate_query` in
-`tools/developer/text2sql.yaml`.
+`tools/developer/text2sql.yaml`. A YAML tool is only skipped when a built-in actually
+takes its place — with no `sources:` block no built-in registers, so nothing is filtered.
+
+**Row limits:** `describe_sql_object`, `get_table_columns`, and `get_related_objects` page
+the full result set (up to 30000 rows) so multi-line DDL and wide tables come back intact.
+`list_schemas` and `list_tables_in_schema` page in SQL and fetch up to their `limit`
+maximum of 500. Any result that hits a cap sets `metadata.truncated: true`.
+
+**Security note:** `describe_sql_object` is registered whenever sources exist and cannot be
+switched off short of removing the `sources:` block. `QSYS2.GENERATE_SQL` reproduces the DDL
+of any supported object type, including `MASK` and `PERMISSION` (row and column access
+control rules) and `PROCEDURE`/`FUNCTION` bodies. Db2 still enforces object authority
+against the configured `DB2i_USER`, so nothing is reachable that this user could not
+already read — size that user's authority accordingly. Note also that the Streamable HTTP
+transport has **no authentication** and `MCP_HTTP_HOST` defaults to `0.0.0.0`; bind it to
+`127.0.0.1` or put it behind an authenticating proxy.
 
 - **Hot-reload** (default on): when any resolved tools YAML file changes on disk, the server
   re-merges and updates the live tool registry without restarting. See

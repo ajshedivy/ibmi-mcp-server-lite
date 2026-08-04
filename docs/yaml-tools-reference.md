@@ -228,7 +228,10 @@ a newly added source will fail reload until the process is restarted.
 - No `typescript_tools` YAML section. Built-in schema discovery / text-to-SQL tools are
   registered from Java (`BuiltinTools`) instead:
   - `describe_sql_object` — always on when sources exist (`QSYS2.GENERATE_SQL`; returns
-    result rows including `SRCDTA`, not a concatenated DDL string like Node)
+    result rows including `SRCDTA`, not a concatenated DDL string like Node). A missing
+    object comes back as a failure carrying Node's "No SQL DDL generated for the specified
+    object" wording plus the arguments searched, since `GENERATE_SQL` returns no rows
+    rather than raising
   - `list_schemas`, `list_tables_in_schema`, `get_table_columns`, `get_related_objects`,
     `validate_query` — via `--builtin-tools` / `IBMI_ENABLE_DEFAULT_TOOLS=true`
   - `execute_sql` — via `--execute-sql` / `IBMI_ENABLE_EXECUTE_SQL=true` (read-only by
@@ -237,4 +240,12 @@ a newly added source will fail reload until the process is restarted.
   - `validate_query` MVP runs `QSYS2.PARSE_STATEMENT` only; catalog hallucination
     cross-checks (SYSTABLES/SYSCOLUMNS/SYSROUTINES) are not ported yet
   - When a YAML tool name collides with a registering built-in, the YAML tool is skipped
-    with a warning (builtins win)
+    with a warning (builtins win). Only built-ins that will actually register can displace
+    a YAML tool, so with no `sources:` block nothing is skipped
+  - Row limits: the built-ins with no SQL row cap (`describe_sql_object`,
+    `get_table_columns`, `get_related_objects`) set `fetchAllRows: true`; the two that page
+    in SQL (`list_schemas`, `list_tables_in_schema`) set `rowsToFetch` to their `limit`
+    maximum of 500. `metadata.truncated` is now set on both the paginated and single-fetch
+    paths whenever the database still had rows to give
+  - Empty results: only `describe_sql_object` treats no rows as a failure. There is no YAML
+    key for this — for a hand-written query, no rows is a valid answer
