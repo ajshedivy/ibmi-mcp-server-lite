@@ -794,6 +794,6 @@ class McpServerRunnerTest {
     return new SourceManager(Map.of(
         "ibmi-system",
         new SourceConfig("ibmi-system", "localhost", 8076, "user", "pass",
-            true, 10, 2, Map.of())));
+            true, 10, 2, SourceConfig.DEFAULT_MCP_POOL_IDLE_TIMEOUT_MS, SourceConfig.DEFAULT_MCP_POOL_QUERY_TIMEOUT_MS, Map.of())));
   }
 }

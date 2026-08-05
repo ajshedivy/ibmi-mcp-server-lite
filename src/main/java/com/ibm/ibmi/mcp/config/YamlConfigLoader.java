@@ -380,6 +380,12 @@ public final class YamlConfigLoader {
       Map<String, Object> src = asMap(entry.getValue(), "source '" + name + "'");
       int maxSize = getInt(src, "max-size", SourceConfig.DEFAULT_MAX_SIZE);
       int startingSize = getInt(src, "starting-size", SourceConfig.DEFAULT_STARTING_SIZE);
+      int mcpPoolIdleTimeoutMs = resolvePoolTimeoutMs(
+          src, "mcp-pool-idle-timeout-ms", "MCP_POOL_IDLE_TIMEOUT_MS",
+          SourceConfig.DEFAULT_MCP_POOL_IDLE_TIMEOUT_MS);
+      int mcpPoolQueryTimeoutMs = resolvePoolTimeoutMs(
+          src, "mcp-pool-query-timeout-ms", "MCP_POOL_QUERY_TIMEOUT_MS",
+          SourceConfig.DEFAULT_MCP_POOL_QUERY_TIMEOUT_MS);
       validatePoolSizes(name, maxSize, startingSize);
       result.put(name, new SourceConfig(
           name,
@@ -390,6 +396,8 @@ public final class YamlConfigLoader {
           getBool(src, "ignore-unauthorized", false),
           maxSize,
           startingSize,
+          mcpPoolIdleTimeoutMs,
+          mcpPoolQueryTimeoutMs,
           mergeJdbcOptions(parseYamlJdbcOptions(src, name))));
     }
     return result;
@@ -583,6 +591,36 @@ public final class YamlConfigLoader {
 
   private static int getInt(Map<String, Object> map, String key, int dflt) {
     return map.get(key) instanceof Number n ? n.intValue() : dflt;
+  }
+
+  /**
+   * YAML key if present, else {@code envKey} from the loader env map, else {@code dflt}.
+   * Explicit {@code 0} from YAML or env disables the timeout. Negatives are rejected
+   * (Node {@code .nonnegative()} parity) so {@code -1} does not silently disable.
+   */
+  private int resolvePoolTimeoutMs(
+      Map<String, Object> src, String yamlKey, String envKey, int dflt) {
+    int value;
+    if (src.get(yamlKey) instanceof Number n) {
+      value = n.intValue();
+    } else {
+      String raw = env.get(envKey);
+      if (raw != null && !raw.isBlank()) {
+        try {
+          value = Integer.parseInt(raw.trim());
+        } catch (NumberFormatException e) {
+          throw new ConfigException(
+              "Invalid " + envKey + " value '" + raw + "': must be an integer (ms)");
+        }
+      } else {
+        return dflt;
+      }
+    }
+    if (value < 0) {
+      throw new ConfigException(
+          envKey + " / " + yamlKey + " must be >= 0 (ms); got " + value);
+    }
+    return value;
   }
 
   private static void validatePoolSizes(String sourceName, int maxSize, int startingSize) {

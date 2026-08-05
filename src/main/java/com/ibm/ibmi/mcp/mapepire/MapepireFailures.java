@@ -2,6 +2,7 @@ package com.ibm.ibmi.mcp.mapepire;
 
 import java.io.IOException;
 import java.sql.SQLException;
+import java.util.concurrent.TimeoutException;
 
 /**
  * Classifies Mapepire/transport failures that should evict a source pool for re-init.
@@ -13,6 +14,12 @@ public final class MapepireFailures {
   public static boolean isConnectionLevel(Throwable error) {
     Throwable current = error;
     while (current != null) {
+      // Our awaitQuery TimeoutException mentions "connection" in the message; eviction
+      // for timeouts is already handled there with an explicit pool identity check.
+      if (current instanceof TimeoutException) {
+        current = current.getCause();
+        continue;
+      }
       if (current instanceof IOException) {
         return true;
       }

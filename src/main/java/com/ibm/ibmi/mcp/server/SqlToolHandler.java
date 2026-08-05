@@ -139,55 +139,64 @@ public final class SqlToolHandler
    * @return a {@link PaginatedResult} containing rows, metadata, and truncation status
    */
   private PaginatedResult executeQuery(RequestContext context, BoundStatement bound) throws Exception {
-    sources.beginQuery();
+    String sourceName = tool.source();
+    sources.beginQuery(sourceName);
     try {
-      Pool pool = sources.getPool(tool.source());
+      Pool pool = sources.getPool(sourceName);
       Query query = bound.parameters().isEmpty()
           ? pool.query(bound.sql())
           : pool.query(bound.sql(), new QueryOptions(false, false, bound.parameters()));
 
       try {
         if (tool.isFetchAll()) {
-          PaginatedResult result = executePaginatedQuery(query);
-          sources.recordActivity(tool.source());
+          PaginatedResult result = executePaginatedQuery(pool, query);
+          sources.recordActivity(sourceName);
           return result;
         } else {
-          QueryResult<Object> result = query.<Object>execute(tool.effectiveRowsToFetch()).get();
-          sources.recordActivity(tool.source());
+          QueryResult<Object> result = sources.awaitQuery(
+              sourceName, query.<Object>execute(tool.effectiveRowsToFetch()), pool);
+          sources.recordActivity(sourceName);
           // Rows beyond the single-shot cap are discarded when the query closes; report that
           // so callers can tell a complete result from a clipped one.
           return new PaginatedResult(result, !result.getIsDone());
         }
       } finally {
+        // Bound close the same way as execute — unbounded .get() can wedge after a
+        // timed-out / dead WebSocket even though awaitQuery already ended the pool.
+        // Pass the same pool instance so a close timeout cannot evict a rebuilt pool.
         try {
-          query.close().get();
+          sources.awaitQuery(sourceName, query.close(), pool);
         } catch (Exception e) {
           if (MapepireFailures.isConnectionLevel(e)) {
-            sources.evictPool(tool.source());
+            sources.evictPoolIfSame(sourceName, pool);
           }
           log.warn("[{}] Failed to close query for tool '{}': {}", context.requestId(), tool.name(), e.getMessage());
         }
       }
     } finally {
-      sources.endQuery();
+      sources.endQuery(sourceName);
     }
   }
 
   /**
    * Fetches all rows up to {@link SqlToolConfig#MAX_PAGINATION_ROWS} using pagination.
    *
+   * @param pool the pool that owns {@code query}
    * @param query the Mapepire query to paginate
    * @return accumulated result with truncation flag
    */
-  private PaginatedResult executePaginatedQuery(Query query) throws Exception {
+  private PaginatedResult executePaginatedQuery(Pool pool, Query query) throws Exception {
+    String sourceName = tool.source();
     // Fetch first page - preserve this for column metadata
-    QueryResult<Object> firstResult = query.<Object>execute(SqlToolConfig.DEFAULT_PAGE_SIZE).get();
+    QueryResult<Object> firstResult = sources.awaitQuery(
+        sourceName, query.<Object>execute(SqlToolConfig.DEFAULT_PAGE_SIZE), pool);
     QueryResult<Object> lastResult = firstResult;
     List<Object> accumulated = new ArrayList<>(firstResult.getData() != null ? firstResult.getData() : List.of());
 
     // Paginate while more data exists and under the limit
     while (!lastResult.getIsDone() && accumulated.size() < SqlToolConfig.MAX_PAGINATION_ROWS) {
-      lastResult = query.<Object>fetchMore(SqlToolConfig.DEFAULT_PAGE_SIZE).get();
+      lastResult = sources.awaitQuery(
+          sourceName, query.<Object>fetchMore(SqlToolConfig.DEFAULT_PAGE_SIZE), pool);
       if (lastResult.getData() != null) {
         accumulated.addAll(lastResult.getData());
       }

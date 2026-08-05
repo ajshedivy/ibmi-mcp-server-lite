@@ -78,6 +78,30 @@ final class MapepireEnv {
     return Boolean.parseBoolean(raw) || "1".equals(raw);
   }
 
+  static int mcpPoolIdleTimeoutMs() {
+    String raw = trimToNull(environment().get("MCP_POOL_IDLE_TIMEOUT_MS"));
+    if (raw == null) {
+      return SourceConfig.DEFAULT_MCP_POOL_IDLE_TIMEOUT_MS;
+    }
+    try {
+      return Integer.parseInt(raw);
+    } catch (NumberFormatException e) {
+      return SourceConfig.DEFAULT_MCP_POOL_IDLE_TIMEOUT_MS;
+    }
+  }
+
+  static int mcpPoolQueryTimeoutMs() {
+    String raw = trimToNull(environment().get("MCP_POOL_QUERY_TIMEOUT_MS"));
+    if (raw == null) {
+      return SourceConfig.DEFAULT_MCP_POOL_QUERY_TIMEOUT_MS;
+    }
+    try {
+      return Integer.parseInt(raw);
+    } catch (NumberFormatException e) {
+      return SourceConfig.DEFAULT_MCP_POOL_QUERY_TIMEOUT_MS;
+    }
+  }
+
   /** Builds a {@link SourceConfig} from env vars for the given source name. */
   static SourceConfig sourceConfig(String name) {
     return new SourceConfig(
@@ -89,6 +113,8 @@ final class MapepireEnv {
         ignoreUnauthorized(),
         SourceConfig.DEFAULT_MAX_SIZE,
         SourceConfig.DEFAULT_STARTING_SIZE,
+        mcpPoolIdleTimeoutMs(),
+        mcpPoolQueryTimeoutMs(),
         Map.of());
   }
 

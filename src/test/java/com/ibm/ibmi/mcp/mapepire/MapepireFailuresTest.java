@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.IOException;
 import java.sql.SQLException;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeoutException;
 
 import org.junit.jupiter.api.Test;
 
@@ -31,5 +32,12 @@ class MapepireFailuresTest {
   void ignoresOrdinarySqlErrors() {
     assertFalse(MapepireFailures.isConnectionLevel(new SQLException("syntax error", "42601", -104)));
     assertFalse(MapepireFailures.isConnectionLevel(new IllegalArgumentException("bad parameter")));
+  }
+
+  @Test
+  void ignoresAwaitQueryTimeoutEvenWhenMessageMentionsConnection() {
+    assertFalse(MapepireFailures.isConnectionLevel(
+        new TimeoutException(
+            "Query timed out after 50ms on pool 'ibmi'. The connection may be stale.")));
   }
 }

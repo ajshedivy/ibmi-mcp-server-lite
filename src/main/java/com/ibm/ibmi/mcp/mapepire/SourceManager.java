@@ -5,7 +5,12 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.slf4j.Logger;
@@ -20,12 +25,17 @@ import io.github.mapepire_ibmi.types.PoolOptions;
 
 /**
  * Owns one lazily-initialized Mapepire {@link Pool} per YAML source.
+ *
+ * <p>Per-source {@code mcp-pool-idle-timeout-ms} closes pools that have been idle
+ * longer than the threshold; the next {@link #getPool} recreates them. Set to
+ * {@code 0} to disable. Query waits use {@link #awaitQuery}.
  */
 public final class SourceManager implements AutoCloseable {
 
   private static final Logger log = LoggerFactory.getLogger(SourceManager.class);
 
   static final Duration SHUTDOWN_GRACE = Duration.ofSeconds(5);
+  static final long MIN_IDLE_CHECK_INTERVAL_MS = 10_000L;
 
   /**
    * Cached pool health for probes. Mapepire's Java {@link Pool} does not expose
@@ -55,20 +65,26 @@ public final class SourceManager implements AutoCloseable {
   private final Map<String, SourceConfig> sources;
   private final Map<String, Pool> pools = new ConcurrentHashMap<>();
   private final Map<String, PoolHealth> health = new ConcurrentHashMap<>();
-  private final AtomicInteger inFlightQueries = new AtomicInteger(0);
+  /** Per-source in-flight tool queries — idle reclaim skips only busy pools. */
+  private final ConcurrentHashMap<String, AtomicInteger> inFlightBySource = new ConcurrentHashMap<>();
+  private ScheduledExecutorService idleScheduler;
 
   public SourceManager(Map<String, SourceConfig> sources) {
     this.sources = sources;
   }
 
-  /** Called when a tool query starts; paired with {@link #endQuery()}. */
-  public void beginQuery() {
-    inFlightQueries.incrementAndGet();
+  /** Called when a tool query starts on {@code sourceName}; paired with {@link #endQuery}. */
+  public void beginQuery(String sourceName) {
+    inFlightBySource.computeIfAbsent(sourceName, ignored -> new AtomicInteger()).incrementAndGet();
   }
 
-  /** Called when a tool query finishes; paired with {@link #beginQuery()}. */
-  public void endQuery() {
-    inFlightQueries.decrementAndGet();
+  /** Called when a tool query finishes on {@code sourceName}; paired with {@link #beginQuery}. */
+  public void endQuery(String sourceName) {
+    AtomicInteger counter = inFlightBySource.get(sourceName);
+    if (counter == null) {
+      return;
+    }
+    counter.decrementAndGet();
   }
 
   public boolean hasSource(String sourceName) {
@@ -111,20 +127,85 @@ public final class SourceManager implements AutoCloseable {
     log.info("Connected pool for source '{}'", sourceName);
     pools.put(sourceName, pool);
     health.put(sourceName, new PoolHealth(true, false, "healthy", Instant.now()));
+    startIdleTimer();
     return pool;
   }
 
-  /** Closes and removes a pool so the next {@link #getPool} call rebuilds it. */
+  /**
+   * Closes and removes a pool after a failure (timeout / connection error) so the next
+   * {@link #getPool} rebuilds it. Marks health {@code unhealthy} (degrades {@code /healthz}).
+   */
   public synchronized void evictPool(String sourceName) {
+    closePool(sourceName, "unhealthy");
+  }
+
+  /**
+   * Evicts {@code sourceName} only if the map still holds {@code expected}. Avoids a
+   * timed-out caller removing a pool that another thread already replaced.
+   */
+  public synchronized void evictPoolIfSame(String sourceName, Pool expected) {
+    if (expected == null || pools.get(sourceName) != expected) {
+      return;
+    }
+    evictPool(sourceName);
+  }
+
+  /**
+   * Closes an idle pool without marking it unhealthy (Node {@code closePool} parity).
+   * {@code /healthz} stays {@code ok} with {@code healthStatus: unknown}.
+   */
+  synchronized void closeIdlePool(String sourceName) {
+    closePool(sourceName, "unknown");
+  }
+
+  private synchronized void closePool(String sourceName, String healthStatus) {
     Pool pool = pools.remove(sourceName);
-    if (pool != null) {
-      health.put(sourceName, new PoolHealth(false, false, "unhealthy", Instant.now()));
-      try {
-        pool.end();
-        log.info("Evicted pool for source '{}'", sourceName);
-      } catch (Exception e) {
-        log.warn("Error ending pool for source '{}': {}", sourceName, e.getMessage());
+    if (pool == null) {
+      return;
+    }
+    health.put(sourceName, new PoolHealth(false, false, healthStatus, Instant.now()));
+    try {
+      pool.end();
+      log.info("Closed pool for source '{}' (status={})", sourceName, healthStatus);
+    } catch (Exception e) {
+      log.warn("Error ending pool for source '{}': {}", sourceName, e.getMessage());
+    }
+  }
+
+  /**
+   * Waits for a Mapepire execute/fetch/close future using the source's query timeout.
+   * On timeout, evicts {@code expected} only if it is still the mapped pool (identity check)
+   * so a concurrent reconnect is not torn down. When {@code mcp-pool-query-timeout-ms <= 0},
+   * waits indefinitely.
+   *
+   * @param expected the pool that owns {@code future}; pass the instance from {@link #getPool},
+   *     not a fresh {@code pools.get} at wait time (close after execute-timeout must not
+   *     snapshot a rebuilt pool)
+   */
+  public <T> T awaitQuery(String sourceName, CompletableFuture<T> future, Pool expected)
+      throws Exception {
+    SourceConfig source = sources.get(sourceName);
+    if (source == null) {
+      throw new IllegalArgumentException("Unknown source: " + sourceName);
+    }
+    int timeoutMs = source.mcpPoolQueryTimeoutMs();
+    try {
+      if (timeoutMs <= 0) {
+        return future.get();
       }
+      return future.get(timeoutMs, TimeUnit.MILLISECONDS);
+    } catch (TimeoutException e) {
+      log.error(
+          "Query timed out after {}ms on pool '{}'. Closing pool for re-initialization.",
+          timeoutMs,
+          sourceName);
+      evictPoolIfSame(sourceName, expected);
+      throw new TimeoutException(
+          "Query timed out after " + timeoutMs + "ms on pool '" + sourceName
+              + "'. The connection may be stale. Pool will be re-initialized on the next request.");
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw e;
     }
   }
 
@@ -186,12 +267,118 @@ public final class SourceManager implements AutoCloseable {
     return new PoolOptions(server, jdbcOptions, source.maxSize(), source.startingSize());
   }
 
+  /**
+   * Starts the idle-pool checker if any source has a positive idle timeout.
+   * Idempotent. Interval is {@code max(10s, minIdleTimeout / 2)}.
+   */
+  synchronized void startIdleTimer() {
+    if (idleScheduler != null) {
+      return;
+    }
+    int minIdleMs = minPositiveIdleTimeoutMs();
+    if (minIdleMs <= 0) {
+      return;
+    }
+    long checkIntervalMs = Math.max(MIN_IDLE_CHECK_INTERVAL_MS, minIdleMs / 2L);
+    idleScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+      Thread t = new Thread(r, "mapepire-pool-idle");
+      t.setDaemon(true);
+      return t;
+    });
+    idleScheduler.scheduleAtFixedRate(
+        this::safeCloseIdlePools, checkIntervalMs, checkIntervalMs, TimeUnit.MILLISECONDS);
+    log.info(
+        "Pool idle timer started: checking every {}ms, closing pools idle longer than configured threshold",
+        checkIntervalMs);
+  }
+
+  /** Stops the idle-pool checker. Called during shutdown. */
+  public synchronized void stopIdleTimer() {
+    if (idleScheduler == null) {
+      return;
+    }
+    idleScheduler.shutdownNow();
+    idleScheduler = null;
+    log.debug("Pool idle timer stopped");
+  }
+
+  boolean idleTimerRunning() {
+    return idleScheduler != null;
+  }
+
+  /**
+   * Closes pools idle longer than their source's {@code mcp-pool-idle-timeout-ms}.
+   * Skips a pool while that source still has an in-flight tool query.
+   */
+  synchronized void closeIdlePools() {
+    Instant now = Instant.now();
+    for (String name : List.copyOf(pools.keySet())) {
+      if (inFlightCount(name) > 0) {
+        continue;
+      }
+      SourceConfig config = sources.get(name);
+      if (config == null) {
+        continue;
+      }
+      int idleTimeoutMs = config.mcpPoolIdleTimeoutMs();
+      if (idleTimeoutMs <= 0) {
+        continue;
+      }
+      PoolHealth poolHealth = health.get(name);
+      if (poolHealth == null || poolHealth.lastActivityAt() == null) {
+        continue;
+      }
+      long idleDurationMs = Duration.between(poolHealth.lastActivityAt(), now).toMillis();
+      if (idleDurationMs > idleTimeoutMs) {
+        log.info(
+            "Closing idle pool '{}' (idle for {}s, threshold {}ms)",
+            name,
+            Math.round(idleDurationMs / 1000.0),
+            idleTimeoutMs);
+        closeIdlePool(name);
+      }
+    }
+  }
+
+  private int inFlightCount(String sourceName) {
+    AtomicInteger counter = inFlightBySource.get(sourceName);
+    return counter == null ? 0 : counter.get();
+  }
+
+  private int totalInFlight() {
+    int total = 0;
+    for (AtomicInteger counter : inFlightBySource.values()) {
+      total += Math.max(0, counter.get());
+    }
+    return total;
+  }
+
+  private void safeCloseIdlePools() {
+    try {
+      closeIdlePools();
+    } catch (Exception e) {
+      log.warn("Idle pool check failed: {}", e.getMessage());
+    }
+  }
+
+  private int minPositiveIdleTimeoutMs() {
+    int min = 0;
+    for (SourceConfig source : sources.values()) {
+      int idle = source.mcpPoolIdleTimeoutMs();
+      if (idle > 0 && (min == 0 || idle < min)) {
+        min = idle;
+      }
+    }
+    return min;
+  }
+
   @Override
   public void close() {
     close(SHUTDOWN_GRACE);
   }
 
   void close(Duration grace) {
+    stopIdleTimer();
     // Do not hold the instance monitor while sleeping: getPool() is synchronized and
     // in-flight queries need it after beginQuery() to make progress toward endQuery().
     awaitInFlight(grace);
@@ -210,9 +397,9 @@ public final class SourceManager implements AutoCloseable {
 
   private void awaitInFlight(Duration grace) {
     long deadline = System.nanoTime() + grace.toNanos();
-    while (inFlightQueries.get() > 0) {
+    while (totalInFlight() > 0) {
       if (System.nanoTime() >= deadline) {
-        log.warn("Shutdown grace elapsed with {} in-flight queries", inFlightQueries.get());
+        log.warn("Shutdown grace elapsed with {} in-flight queries", totalInFlight());
         return;
       }
       try {
@@ -225,3 +412,4 @@ public final class SourceManager implements AutoCloseable {
     }
   }
 }
+

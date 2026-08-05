@@ -272,6 +272,8 @@ Desktop) that holds the stdio session open.
 | `--env-file <path>` | — | `.env` file for `${VAR}` interpolation (default `./.env`) |
 | `--version` / `--help` | — | Print and exit |
 | — | `MCP_LOG_LEVEL` | `debug`, `info` (default), `warn`, `error` — logs go to **stderr** |
+| — | `MCP_POOL_IDLE_TIMEOUT_MS` | Close idle Mapepire pools after this many ms (default `300000`; `0` disables). YAML `mcp-pool-idle-timeout-ms` overrides |
+| — | `MCP_POOL_QUERY_TIMEOUT_MS` | Fail execute/fetch after this many ms and evict the pool (default `30000`; `0` disables). YAML `mcp-pool-query-timeout-ms` overrides |
 | — | `YAML_MERGE_ARRAYS` | `true` (default) — concatenate toolset `tools` arrays on name collision |
 | — | `YAML_ALLOW_DUPLICATE_TOOLS` | `false` (default) — error on duplicate tool names across merged files |
 | — | `YAML_ALLOW_DUPLICATE_SOURCES` | `false` (default) — error on duplicate source names across merged files |
