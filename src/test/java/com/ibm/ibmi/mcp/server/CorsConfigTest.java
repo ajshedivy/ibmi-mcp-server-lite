@@ -2,6 +2,7 @@ package com.ibm.ibmi.mcp.server;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -66,5 +67,14 @@ class CorsConfigTest {
     assertEquals(CorsConfig.ALLOWED_METHODS, cors.getAllowedMethods());
     assertEquals(CorsConfig.ALLOWED_HEADERS, cors.getAllowedHeaders());
     assertEquals(CorsConfig.EXPOSED_HEADERS, cors.getExposedHeaders());
+  }
+
+  @Test
+  void resolve_csvStarAndOtherOrigins_throwsIllegalArgumentException() {
+    IllegalArgumentException ex = assertThrows(
+        IllegalArgumentException.class,
+        () -> CorsConfig.resolveOriginPatterns(
+            "*,https://example.com", "production"));
+    assertTrue(ex.getMessage().contains("cannot be mixed"));
   }
 }

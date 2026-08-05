@@ -71,11 +71,14 @@ now (auth is still on the roadmap). CORS is enabled via Jetty `CrossOriginHandle
 
 | `MCP_ALLOWED_ORIGINS` | `MCP_SERVER_ENV` | Browser CORS |
 |----------------------|------------------|--------------|
-| non-empty CSV | any | only listed origins |
+| sole `*` | any | allow any Origin |
+| non-empty CSV (no `*`) | any | only listed origins |
+| `*` mixed with other origins | any | startup error |
 | empty / unset | `production` | deny all |
 | empty / unset | anything else | allow any Origin (dev) |
 
-Example: `MCP_ALLOWED_ORIGINS=http://localhost:5173`. Native clients (curl) that omit
+Example: `MCP_ALLOWED_ORIGINS=http://localhost:5173`. Use `*` alone for allow-any;
+do not mix `*` with specific origins. Native clients (curl) that omit
 `Origin` are unaffected. `GET /healthz` returns JSON pool health
 (`status` is `ok` or `degraded`; HTTP status is always 200 — probes should read the body).
 It reflects **cached pool state** after a connect attempt (or successful query) — it does

@@ -15,6 +15,8 @@ import org.eclipse.jetty.server.handler.CrossOriginHandler;
  * <p>Semantics match the reference Node server:
  * <ul>
  *   <li>non-empty allowlist → exact origins (quoted as regex for the handler)</li>
+ *   <li>sole {@code *} → allow any Origin (Jetty allow-any token)</li>
+ *   <li>{@code *} mixed with other origins → rejected ({@link IllegalArgumentException})</li>
  *   <li>empty + {@code MCP_SERVER_ENV=production} → deny all</li>
  *   <li>empty + non-production → {@code *} (allow any)</li>
  * </ul>
@@ -39,13 +41,19 @@ public final class CorsConfig {
    * @param allowedOriginsCsv comma-separated origins from {@code MCP_ALLOWED_ORIGINS}
    *     (may be {@code null} or blank)
    * @param serverEnv value of {@code MCP_SERVER_ENV} (may be {@code null})
+   * @throws IllegalArgumentException if {@code *} appears alongside other origins
    */
   public static Set<String> resolveOriginPatterns(String allowedOriginsCsv, String serverEnv) {
     List<String> origins = parseCsv(allowedOriginsCsv);
     if (!origins.isEmpty()) {
       // Bare "*" is Jetty's allow-any token; do not Pattern.quote it.
-      if (origins.size() == 1 && "*".equals(origins.get(0))) {
-        return Set.of("*");
+      if (origins.contains("*")) {
+        if (origins.size() == 1) {
+          return Set.of("*");
+        }
+        throw new IllegalArgumentException(
+            "MCP_ALLOWED_ORIGINS: '*' cannot be mixed with other origins; "
+                + "use only '*' or a list of specific origins");
       }
       // CrossOriginHandler treats non-"*" entries as regex — quote for exact match.
       return origins.stream()
