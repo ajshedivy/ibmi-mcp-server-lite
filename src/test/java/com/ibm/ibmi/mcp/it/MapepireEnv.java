@@ -83,7 +83,11 @@ final class MapepireEnv {
     if (raw == null) {
       return SourceConfig.DEFAULT_MCP_POOL_IDLE_TIMEOUT_MS;
     }
-    return Integer.parseInt(raw);
+    try {
+      return Integer.parseInt(raw);
+    } catch (NumberFormatException e) {
+      return SourceConfig.DEFAULT_MCP_POOL_IDLE_TIMEOUT_MS;
+    }
   }
 
   static int mcpPoolQueryTimeoutMs() {
@@ -91,7 +95,11 @@ final class MapepireEnv {
     if (raw == null) {
       return SourceConfig.DEFAULT_MCP_POOL_QUERY_TIMEOUT_MS;
     }
-    return Integer.parseInt(raw);
+    try {
+      return Integer.parseInt(raw);
+    } catch (NumberFormatException e) {
+      return SourceConfig.DEFAULT_MCP_POOL_QUERY_TIMEOUT_MS;
+    }
   }
 
   /** Builds a {@link SourceConfig} from env vars for the given source name. */
