@@ -435,7 +435,7 @@ public final class McpServerRunner {
    */
   private static int ensureBuiltinsRegistered(ServerHandle handle, ToolsConfig config) {
     if (config.sources().isEmpty()) {
-      if (handle.enableExecuteSql()) {
+      if (handle.enableExecuteSql() || handle.enableBuiltinTools()) {
         throw new IllegalArgumentException(
             "No sources defined; built-in tools require a database source");
       }
@@ -443,6 +443,11 @@ public final class McpServerRunner {
     }
 
     String source = resolveBuiltinSource(config);
+    if (!handle.sources().hasSource(source)) {
+      throw new IllegalArgumentException(
+          "Built-in tools source '" + source
+              + "' is not available until restart (sources are not hot-reloaded)");
+    }
     List<SqlToolConfig> desired = BuiltinTools.configsForGates(
         source,
         handle.enableBuiltinTools(),
@@ -659,9 +664,13 @@ public final class McpServerRunner {
       }
     }
     for (Map.Entry<String, SqlToolConfig> entry : selected.entrySet()) {
-      SqlToolConfig oldConfig = registered.get(entry.getKey());
+      String name = entry.getKey();
+      if (builtinNames.contains(name)) {
+        continue;
+      }
+      SqlToolConfig oldConfig = registered.get(name);
       if (oldConfig == null || !oldConfig.equals(entry.getValue())) {
-        toAdd.add(entry.getKey());
+        toAdd.add(name);
       }
     }
     return new ToolReloadPlan(Set.copyOf(toRemove), Set.copyOf(toAdd));

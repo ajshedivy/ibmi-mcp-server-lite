@@ -239,13 +239,14 @@ class McpServerRunnerTest {
   @Test
   void yamlToolKeptWhenNoBuiltinCanReplaceIt() {
     // Built-ins need a database source. Without one nothing registers, so filtering the
-    // YAML tool out would make it disappear with no replacement.
+    // YAML tool out would make it disappear with no replacement. Both gates must be off
+    // here — enabling either fails startup when sources are empty.
     SqlToolConfig yamlValidateQuery = tool(
         BuiltinTools.VALIDATE_QUERY_NAME, "YAML duplicate", "SELECT 1 FROM SYSIBM.SYSDUMMY1");
     ToolsConfig config = new ToolsConfig(
         Map.of(), Map.of(BuiltinTools.VALIDATE_QUERY_NAME, yamlValidateQuery), Map.of());
 
-    handle = McpServerRunner.startForTests(config, Set.of(), true, false, true);
+    handle = McpServerRunner.startForTests(config, Set.of(), false, false, true);
 
     SqlToolConfig registered =
         handle.registeredTools().get(BuiltinTools.VALIDATE_QUERY_NAME);
@@ -254,11 +255,22 @@ class McpServerRunnerTest {
   }
 
   @Test
-  void noBuiltinsRegisterWithoutSources() {
+  void builtinToolsStartupFailsWhenNoSources() {
     ToolsConfig config = new ToolsConfig(
         Map.of(), Map.of("tool_a", tool("tool_a", "a", "SELECT 1 FROM SYSIBM.SYSDUMMY1")), Map.of());
 
-    handle = McpServerRunner.startForTests(config, Set.of(), true, false, true);
+    IllegalArgumentException e = assertThrows(
+        IllegalArgumentException.class,
+        () -> McpServerRunner.startForTests(config, Set.of(), true, false, true));
+    assertTrue(e.getMessage().contains("No sources defined"));
+  }
+
+  @Test
+  void noBuiltinsGateAllowsStartupWithoutSources() {
+    ToolsConfig config = new ToolsConfig(
+        Map.of(), Map.of("tool_a", tool("tool_a", "a", "SELECT 1 FROM SYSIBM.SYSDUMMY1")), Map.of());
+
+    handle = McpServerRunner.startForTests(config, Set.of(), false, false, true);
 
     assertEquals(Set.of("tool_a"), toolNames(handle));
   }
@@ -418,6 +430,27 @@ class McpServerRunnerTest {
   }
 
   @Test
+  void computeReloadPlan_skipsBuiltinNamesOnAdd() {
+    SqlToolConfig toolA = tool("tool_a", "A", "SELECT 1 FROM SYSIBM.SYSDUMMY1");
+    SqlToolConfig executeSql = BuiltinTools.executeSql("ibmi-system", true);
+    SqlToolConfig yamlCollidingExecute = tool(
+        BuiltinTools.EXECUTE_SQL_NAME, "yaml override", "SELECT 1 FROM SYSIBM.SYSDUMMY1");
+    Map<String, SqlToolConfig> registered = Map.of(
+        "tool_a", toolA,
+        BuiltinTools.EXECUTE_SQL_NAME, executeSql);
+    Map<String, SqlToolConfig> selected = Map.of(
+        "tool_a", toolA,
+        BuiltinTools.EXECUTE_SQL_NAME, yamlCollidingExecute);
+
+    McpServerRunner.ToolReloadPlan plan = McpServerRunner.computeReloadPlan(
+        registered, selected, BuiltinTools.activeBuiltinNames(false, true));
+
+    assertTrue(plan.toRemove().isEmpty());
+    assertFalse(plan.toAdd().contains(BuiltinTools.EXECUTE_SQL_NAME));
+    assertTrue(plan.toAdd().isEmpty());
+  }
+
+  @Test
   void validateSelectedTools_acceptsDescribeSqlObjectCall() {
     assertDoesNotThrow(() ->
         McpServerRunner.validateSelectedTools(
@@ -563,6 +596,40 @@ class McpServerRunnerTest {
           tool_on_new_source:
             source: other-system
             description: uses source not in startup SourceManager
+            statement: SELECT 1 FROM SYSIBM.SYSDUMMY1
+        """);
+    assertFalse(McpServerRunner.reload(
+        handle, yaml.toString(), env, mergeOpts, Set.of()));
+    assertEquals(before, toolNames(handle));
+    assertEquals(2, handle.registeredTools().size());
+  }
+
+  @Test
+  void reload_swallowsBuiltinSourceNotInSourceManager(@TempDir Path tempDir) throws Exception {
+    Path yaml = tempDir.resolve("tools.yaml");
+    Files.writeString(yaml, yamlWithTools("tool_a"));
+    Map<String, String> env = Map.of();
+    MergeOptions mergeOpts = MergeOptions.fromEnv(env);
+
+    handle = startFromYaml(yaml, env);
+    Set<String> before = toolNames(handle);
+
+    // New first source is not in the live SourceManager; YAML tools still use ibmi-system
+    // so validateToolSources passes, but ensureBuiltinsRegistered must reject the retarget.
+    Files.writeString(yaml, """
+        sources:
+          other-system:
+            host: other.example.com
+            user: user
+            password: pass
+          ibmi-system:
+            host: localhost
+            user: user
+            password: pass
+        tools:
+          tool_b:
+            source: ibmi-system
+            description: "b"
             statement: SELECT 1 FROM SYSIBM.SYSDUMMY1
         """);
     assertFalse(McpServerRunner.reload(
