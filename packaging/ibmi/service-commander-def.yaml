@@ -2,6 +2,7 @@
 # /QOpenSys/etc/sc/services/ibmi-mcp-server-lite.yaml by the RPM.
 #
 # sc manages long-running daemons. Use --transport http for daemon mode;
+# MCP_SERVER_ENV=production to deny all origins;
 # check_alive probes the default HTTP port (3010).
 name: IBM i MCP Server Lite
 dir: .
@@ -11,3 +12,4 @@ batch_mode: 'true'
 sbmjob_opts: 'JOBQ(QUSRNOMAX)'
 environment_vars:
   - PATH=/QOpenSys/pkgs/bin:/QOpenSys/usr/bin:/usr/ccs/bin:/QOpenSys/usr/bin/X11:/usr/sbin:.:/usr/bin
+  - MCP_SERVER_ENV=production

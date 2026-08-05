@@ -267,10 +267,19 @@ public final class McpServerRunner {
         sources,
         transport.httpHost(),
         transport.httpPort(),
-        transport.httpEndpoint());
+        transport.httpEndpoint(),
+        transport.corsOriginPatterns());
     handle.attachJetty(jetty);
 
     int boundPort = HttpTransport.localPort(jetty);
+    Set<String> cors = transport.corsOriginPatterns();
+    if (cors.isEmpty()) {
+      log.info("CORS: deny-all");
+    } else if (cors.equals(Set.of("*"))) {
+      log.info("CORS: allow-any (*)");
+    } else {
+      log.info("CORS: allowlist {}", cors);
+    }
     log.info("HTTP transport listening at http://{}:{}{}",
         transport.httpHost(), boundPort, transport.httpEndpoint());
     log.info("{} v{} ready on http with {} tools", SERVER_NAME, SERVER_VERSION, toolCount);

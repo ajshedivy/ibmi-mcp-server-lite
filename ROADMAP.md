@@ -18,6 +18,7 @@ Work is organized into **milestones**, each a focused theme that builds on the l
 | [M4](https://github.com/ajshedivy/ibmi-mcp-server-lite/milestone/4) | SQL Security Hardening | 2 |
 | [M5](https://github.com/ajshedivy/ibmi-mcp-server-lite/milestone/5) | HTTP Transport & Deployment | 2 |
 | [M6](https://github.com/ajshedivy/ibmi-mcp-server-lite/milestone/6) | Upstream & Test Infrastructure | 2 |
+| [M7](https://github.com/ajshedivy/ibmi-mcp-server-lite/milestone/7) | Client Value & Production Hardening | see GitHub |
 
 ## M1 — Schema & Output Parity
 
@@ -102,6 +103,15 @@ Invest in the surrounding ecosystem: fix the TLS hostname-verification gap upstr
 **Implemented:**
 - ✅ [#17](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/17) — Upstream mapepire-java: skip TLS hostname verification when `rejectUnauthorized=false` (mapepire-sdk 0.1.3)
 - ✅ [#18](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/18) — JUnit integration-test profile against a live Mapepire (Failsafe `-Pintegration-tests`, `*IT.java`, skipped when `DB2i_*` are missing)
+
+## M7 — Client Value & Production Hardening
+
+[📂 Milestone M7 on GitHub](https://github.com/ajshedivy/ibmi-mcp-server-lite/milestone/7)
+
+Browser and gateway clients, auth, and production hardening on top of the HTTP transport from M5.
+
+**Implemented:**
+- ✅ [#43](https://github.com/ajshedivy/ibmi-mcp-server-lite/issues/43) — HTTP CORS via Jetty `CrossOriginHandler` (`MCP_ALLOWED_ORIGINS` / `MCP_SERVER_ENV`)
 
 | # | Issue | Difficulty | Estimate |
 |---|---|---|---|

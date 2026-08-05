@@ -63,9 +63,23 @@ Defaults: bind `0.0.0.0:3010`, MCP endpoint `/mcp`. Override via flags or enviro
 | `--http-port` | `MCP_HTTP_PORT` | `3010` |
 | `--http-host` | `MCP_HTTP_HOST` | `0.0.0.0` |
 | `--http-endpoint` | `MCP_HTTP_ENDPOINT_PATH` | `/mcp` |
+| (env only) | `MCP_ALLOWED_ORIGINS` | empty (see CORS below) |
+| (env only) | `MCP_SERVER_ENV` | empty (non-production) |
 
 CLI flags win over environment variables. The HTTP transport is **unauthenticated** for
-now (no auth or CORS — see roadmap). `GET /healthz` returns JSON pool health
+now (auth is still on the roadmap). CORS is enabled via Jetty `CrossOriginHandler`:
+
+| `MCP_ALLOWED_ORIGINS` | `MCP_SERVER_ENV` | Browser CORS |
+|----------------------|------------------|--------------|
+| sole `*` | any | allow any Origin |
+| non-empty CSV (no `*`) | any | only listed origins |
+| `*` mixed with other origins | any | startup error |
+| empty / unset | `production` | deny all |
+| empty / unset | anything else | allow any Origin (dev) |
+
+Example: `MCP_ALLOWED_ORIGINS=http://localhost:5173`. Use `*` alone for allow-any;
+do not mix `*` with specific origins. Native clients (curl) that omit
+`Origin` are unaffected. `GET /healthz` returns JSON pool health
 (`status` is `ok` or `degraded`; HTTP status is always 200 — probes should read the body).
 It reflects **cached pool state** after a connect attempt (or successful query) — it does
 **not** probe Mapepire. Until a tool has touched a source, `pools` is `{}` and status stays
@@ -274,7 +288,7 @@ anywhere else against an IBM i also works today, as the smoke test demonstrates.
 
 ## What's deliberately missing
 
-This MVP implements a faithful subset of the reference server. Auth/CORS on HTTP,
+This MVP implements a faithful subset of the reference server. Auth on HTTP,
 the full SQL security parser, and more are sequenced into milestones —
 each tracked as a GitHub issue with pointers into the reference implementation — in the
 [**roadmap**](ROADMAP.md)
