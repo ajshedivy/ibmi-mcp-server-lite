@@ -65,21 +65,26 @@ public final class SourceManager implements AutoCloseable {
   private final Map<String, SourceConfig> sources;
   private final Map<String, Pool> pools = new ConcurrentHashMap<>();
   private final Map<String, PoolHealth> health = new ConcurrentHashMap<>();
-  private final AtomicInteger inFlightQueries = new AtomicInteger(0);
+  /** Per-source in-flight tool queries — idle reclaim skips only busy pools. */
+  private final ConcurrentHashMap<String, AtomicInteger> inFlightBySource = new ConcurrentHashMap<>();
   private ScheduledExecutorService idleScheduler;
 
   public SourceManager(Map<String, SourceConfig> sources) {
     this.sources = sources;
   }
 
-  /** Called when a tool query starts; paired with {@link #endQuery()}. */
-  public void beginQuery() {
-    inFlightQueries.incrementAndGet();
+  /** Called when a tool query starts on {@code sourceName}; paired with {@link #endQuery}. */
+  public void beginQuery(String sourceName) {
+    inFlightBySource.computeIfAbsent(sourceName, ignored -> new AtomicInteger()).incrementAndGet();
   }
 
-  /** Called when a tool query finishes; paired with {@link #beginQuery()}. */
-  public void endQuery() {
-    inFlightQueries.decrementAndGet();
+  /** Called when a tool query finishes on {@code sourceName}; paired with {@link #beginQuery}. */
+  public void endQuery(String sourceName) {
+    AtomicInteger counter = inFlightBySource.get(sourceName);
+    if (counter == null) {
+      return;
+    }
+    counter.decrementAndGet();
   }
 
   public boolean hasSource(String sourceName) {
@@ -299,14 +304,14 @@ public final class SourceManager implements AutoCloseable {
 
   /**
    * Closes pools idle longer than their source's {@code mcp-pool-idle-timeout-ms}.
-   * Skips the sweep while any tool query is in flight.
+   * Skips a pool while that source still has an in-flight tool query.
    */
   synchronized void closeIdlePools() {
-    if (inFlightQueries.get() > 0) {
-      return;
-    }
     Instant now = Instant.now();
     for (String name : List.copyOf(pools.keySet())) {
+      if (inFlightCount(name) > 0) {
+        continue;
+      }
       SourceConfig config = sources.get(name);
       if (config == null) {
         continue;
@@ -329,6 +334,19 @@ public final class SourceManager implements AutoCloseable {
         closeIdlePool(name);
       }
     }
+  }
+
+  private int inFlightCount(String sourceName) {
+    AtomicInteger counter = inFlightBySource.get(sourceName);
+    return counter == null ? 0 : counter.get();
+  }
+
+  private int totalInFlight() {
+    int total = 0;
+    for (AtomicInteger counter : inFlightBySource.values()) {
+      total += Math.max(0, counter.get());
+    }
+    return total;
   }
 
   private void safeCloseIdlePools() {
@@ -375,9 +393,9 @@ public final class SourceManager implements AutoCloseable {
 
   private void awaitInFlight(Duration grace) {
     long deadline = System.nanoTime() + grace.toNanos();
-    while (inFlightQueries.get() > 0) {
+    while (totalInFlight() > 0) {
       if (System.nanoTime() >= deadline) {
-        log.warn("Shutdown grace elapsed with {} in-flight queries", inFlightQueries.get());
+        log.warn("Shutdown grace elapsed with {} in-flight queries", totalInFlight());
         return;
       }
       try {

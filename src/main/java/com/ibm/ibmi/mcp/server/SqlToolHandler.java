@@ -139,9 +139,10 @@ public final class SqlToolHandler
    * @return a {@link PaginatedResult} containing rows, metadata, and truncation status
    */
   private PaginatedResult executeQuery(RequestContext context, BoundStatement bound) throws Exception {
-    sources.beginQuery();
+    String sourceName = tool.source();
+    sources.beginQuery(sourceName);
     try {
-      Pool pool = sources.getPool(tool.source());
+      Pool pool = sources.getPool(sourceName);
       Query query = bound.parameters().isEmpty()
           ? pool.query(bound.sql())
           : pool.query(bound.sql(), new QueryOptions(false, false, bound.parameters()));
@@ -149,12 +150,12 @@ public final class SqlToolHandler
       try {
         if (tool.isFetchAll()) {
           PaginatedResult result = executePaginatedQuery(query);
-          sources.recordActivity(tool.source());
+          sources.recordActivity(sourceName);
           return result;
         } else {
           QueryResult<Object> result = sources.awaitQuery(
-              tool.source(), query.<Object>execute(tool.effectiveRowsToFetch()));
-          sources.recordActivity(tool.source());
+              sourceName, query.<Object>execute(tool.effectiveRowsToFetch()));
+          sources.recordActivity(sourceName);
           // Rows beyond the single-shot cap are discarded when the query closes; report that
           // so callers can tell a complete result from a clipped one.
           return new PaginatedResult(result, !result.getIsDone());
@@ -163,16 +164,16 @@ public final class SqlToolHandler
         // Bound close the same way as execute — unbounded .get() can wedge after a
         // timed-out / dead WebSocket even though awaitQuery already ended the pool.
         try {
-          sources.awaitQuery(tool.source(), query.close());
+          sources.awaitQuery(sourceName, query.close());
         } catch (Exception e) {
           if (MapepireFailures.isConnectionLevel(e)) {
-            sources.evictPoolIfSame(tool.source(), pool);
+            sources.evictPoolIfSame(sourceName, pool);
           }
           log.warn("[{}] Failed to close query for tool '{}': {}", context.requestId(), tool.name(), e.getMessage());
         }
       }
     } finally {
-      sources.endQuery();
+      sources.endQuery(sourceName);
     }
   }
 
