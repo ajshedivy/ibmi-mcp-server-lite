@@ -6,6 +6,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Path;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -40,8 +41,9 @@ import io.modelcontextprotocol.spec.McpSchema.ToolAnnotations;
 import org.eclipse.jetty.server.Server;
 
 /**
- * Builds the MCP server and registers selected YAML tools plus optional built-ins over stdio or
- * Streamable HTTP.
+ * Builds the MCP server and registers selected YAML tools plus built-ins over stdio or
+ * Streamable HTTP. {@code describe_sql_object} is always registered when sources exist;
+ * discovery tools and {@code execute_sql} are gated separately.
  */
 public final class McpServerRunner {
 
@@ -59,6 +61,7 @@ public final class McpServerRunner {
     private final SourceManager sources;
     private final ToolSpecContext toolSpecContext;
     private final ConcurrentHashMap<String, SqlToolConfig> registeredTools;
+    private final boolean enableBuiltinTools;
     private final boolean enableExecuteSql;
     private final boolean executeSqlReadonly;
     private volatile McpSyncServer server;
@@ -71,11 +74,13 @@ public final class McpServerRunner {
         SourceManager sources,
         ToolSpecContext toolSpecContext,
         ConcurrentHashMap<String, SqlToolConfig> registeredTools,
+        boolean enableBuiltinTools,
         boolean enableExecuteSql,
         boolean executeSqlReadonly) {
       this.sources = sources;
       this.toolSpecContext = toolSpecContext;
       this.registeredTools = registeredTools;
+      this.enableBuiltinTools = enableBuiltinTools;
       this.enableExecuteSql = enableExecuteSql;
       this.executeSqlReadonly = executeSqlReadonly;
     }
@@ -114,6 +119,10 @@ public final class McpServerRunner {
 
     public ConcurrentHashMap<String, SqlToolConfig> registeredTools() {
       return registeredTools;
+    }
+
+    boolean enableBuiltinTools() {
+      return enableBuiltinTools;
     }
 
     boolean enableExecuteSql() {
@@ -181,17 +190,18 @@ public final class McpServerRunner {
       Set<String> selectedToolsets,
       InputStream stdin,
       ServerHandle[] handleSlot,
+      boolean enableBuiltinTools,
       boolean enableExecuteSql,
       boolean executeSqlReadonly) {
     return start(config, selectedToolsets, stdin, handleSlot, System.out,
-        enableExecuteSql, executeSqlReadonly);
+        enableBuiltinTools, enableExecuteSql, executeSqlReadonly);
   }
 
   /**
    * In-process stdio transport for unit tests (does not bind {@code System.in/out}).
    */
   static ServerHandle startForTests(ToolsConfig config, Set<String> selectedToolsets) {
-    return startForTests(config, selectedToolsets, false, true);
+    return startForTests(config, selectedToolsets, false, false, true);
   }
 
   static ServerHandle startForTests(
@@ -199,12 +209,23 @@ public final class McpServerRunner {
       Set<String> selectedToolsets,
       boolean enableExecuteSql,
       boolean executeSqlReadonly) {
-    Map<String, SqlToolConfig> selected = selectValidatedTools(config, selectedToolsets);
+    return startForTests(config, selectedToolsets, false, enableExecuteSql, executeSqlReadonly);
+  }
+
+  static ServerHandle startForTests(
+      ToolsConfig config,
+      Set<String> selectedToolsets,
+      boolean enableBuiltinTools,
+      boolean enableExecuteSql,
+      boolean executeSqlReadonly) {
+    Map<String, SqlToolConfig> selected = selectValidatedTools(
+        config, selectedToolsets, enableBuiltinTools, enableExecuteSql);
     ToolSpecContext toolSpecContext = ToolSpecContext.create();
     SourceManager sources = new SourceManager(config.sources());
     ConcurrentHashMap<String, SqlToolConfig> registeredTools = new ConcurrentHashMap<>();
     ServerHandle handle = new ServerHandle(
-        sources, toolSpecContext, registeredTools, enableExecuteSql, executeSqlReadonly);
+        sources, toolSpecContext, registeredTools,
+        enableBuiltinTools, enableExecuteSql, executeSqlReadonly);
 
     TestStdin testStdin = new TestStdin();
     handle.attachTestStdin(testStdin);
@@ -215,7 +236,7 @@ public final class McpServerRunner {
         .build();
     handle.attachServer(server);
     registerYamlTools(handle, config, selected, server);
-    ensureExecuteSqlRegistered(handle, config);
+    ensureBuiltinsRegistered(handle, config);
 
     return handle;
   }
@@ -229,7 +250,7 @@ public final class McpServerRunner {
       Set<String> selectedToolsets,
       TransportConfig transport,
       ServerHandle[] handleSlot) throws Exception {
-    return startHttp(config, selectedToolsets, transport, handleSlot, false, true);
+    return startHttp(config, selectedToolsets, transport, handleSlot, false, false, true);
   }
 
   public static ServerHandle startHttp(
@@ -239,13 +260,27 @@ public final class McpServerRunner {
       ServerHandle[] handleSlot,
       boolean enableExecuteSql,
       boolean executeSqlReadonly) throws Exception {
-    Map<String, SqlToolConfig> selected = selectValidatedTools(config, selectedToolsets);
+    return startHttp(
+        config, selectedToolsets, transport, handleSlot, false, enableExecuteSql, executeSqlReadonly);
+  }
+
+  public static ServerHandle startHttp(
+      ToolsConfig config,
+      Set<String> selectedToolsets,
+      TransportConfig transport,
+      ServerHandle[] handleSlot,
+      boolean enableBuiltinTools,
+      boolean enableExecuteSql,
+      boolean executeSqlReadonly) throws Exception {
+    Map<String, SqlToolConfig> selected = selectValidatedTools(
+        config, selectedToolsets, enableBuiltinTools, enableExecuteSql);
 
     ToolSpecContext toolSpecContext = ToolSpecContext.create();
     SourceManager sources = new SourceManager(config.sources());
     ConcurrentHashMap<String, SqlToolConfig> registeredTools = new ConcurrentHashMap<>();
     ServerHandle handle = new ServerHandle(
-        sources, toolSpecContext, registeredTools, enableExecuteSql, executeSqlReadonly);
+        sources, toolSpecContext, registeredTools,
+        enableBuiltinTools, enableExecuteSql, executeSqlReadonly);
     handleSlot[0] = handle;
 
     var transportProvider = HttpServletStreamableServerTransportProvider.builder()
@@ -260,7 +295,7 @@ public final class McpServerRunner {
     handle.attachServer(server);
 
     registerYamlTools(handle, config, selected, server);
-    int toolCount = ensureExecuteSqlRegistered(handle, config);
+    int toolCount = ensureBuiltinsRegistered(handle, config);
 
     Server jetty = HttpTransport.start(
         transportProvider,
@@ -292,15 +327,18 @@ public final class McpServerRunner {
       InputStream stdin,
       ServerHandle[] handleSlot,
       OutputStream stdout,
+      boolean enableBuiltinTools,
       boolean enableExecuteSql,
       boolean executeSqlReadonly) {
-    Map<String, SqlToolConfig> selected = selectValidatedTools(config, selectedToolsets);
+    Map<String, SqlToolConfig> selected = selectValidatedTools(
+        config, selectedToolsets, enableBuiltinTools, enableExecuteSql);
 
     ToolSpecContext toolSpecContext = ToolSpecContext.create();
     SourceManager sources = new SourceManager(config.sources());
     ConcurrentHashMap<String, SqlToolConfig> registeredTools = new ConcurrentHashMap<>();
     ServerHandle handle = new ServerHandle(
-        sources, toolSpecContext, registeredTools, enableExecuteSql, executeSqlReadonly);
+        sources, toolSpecContext, registeredTools,
+        enableBuiltinTools, enableExecuteSql, executeSqlReadonly);
     handleSlot[0] = handle;
 
     McpSyncServer server = McpServer.sync(
@@ -311,7 +349,7 @@ public final class McpServerRunner {
     handle.attachServer(server);
 
     registerYamlTools(handle, config, selected, server);
-    int toolCount = ensureExecuteSqlRegistered(handle, config);
+    int toolCount = ensureBuiltinsRegistered(handle, config);
 
     log.info("{} v{} ready on stdio with {} tools", SERVER_NAME, SERVER_VERSION, toolCount);
     return handle;
@@ -319,12 +357,60 @@ public final class McpServerRunner {
 
   static Map<String, SqlToolConfig> selectValidatedTools(
       ToolsConfig config, Set<String> selectedToolsets) {
-    Map<String, SqlToolConfig> selected = config.selectTools(selectedToolsets);
+    return selectValidatedTools(config, selectedToolsets, false, false);
+  }
+
+  static Map<String, SqlToolConfig> selectValidatedTools(
+      ToolsConfig config,
+      Set<String> selectedToolsets,
+      boolean enableBuiltinTools,
+      boolean enableExecuteSql) {
+    Map<String, SqlToolConfig> selected = filterYamlCollisions(
+        config.selectTools(selectedToolsets),
+        collidingBuiltinNames(config, enableBuiltinTools, enableExecuteSql));
     if (selected.isEmpty()) {
       log.warn("No tools selected for registration (check --toolsets / YAML contents)");
     }
     validateSelectedTools(selected.values());
     return selected;
+  }
+
+  /**
+   * Names that will actually take a YAML tool's place. Built-ins need a database source, so
+   * with no {@code sources:} block nothing registers ({@link #ensureBuiltinsRegistered}) and
+   * nothing should be filtered out either — otherwise a YAML tool named after a built-in
+   * would be dropped with no replacement.
+   *
+   * <p>Distinct from the gate-only set used by {@link #computeReloadPlan}, which protects
+   * already-registered built-ins from being torn down by a YAML diff.
+   */
+  static Set<String> collidingBuiltinNames(
+      ToolsConfig config, boolean enableBuiltinTools, boolean enableExecuteSql) {
+    return config.sources().isEmpty()
+        ? Set.of()
+        : BuiltinTools.activeBuiltinNames(enableBuiltinTools, enableExecuteSql);
+  }
+
+  /**
+   * Drops YAML tools whose names collide with builtins that will register. Builtins win;
+   * a warning is logged for each skipped YAML tool.
+   */
+  static Map<String, SqlToolConfig> filterYamlCollisions(
+      Map<String, SqlToolConfig> selected, Set<String> builtinNames) {
+    if (builtinNames.isEmpty() || selected.isEmpty()) {
+      return selected;
+    }
+    Map<String, SqlToolConfig> filtered = new LinkedHashMap<>();
+    for (Map.Entry<String, SqlToolConfig> entry : selected.entrySet()) {
+      if (builtinNames.contains(entry.getKey())) {
+        log.warn(
+            "Skipping YAML tool '{}': built-in with the same name is enabled",
+            entry.getKey());
+        continue;
+      }
+      filtered.put(entry.getKey(), entry.getValue());
+    }
+    return filtered;
   }
 
   private static void registerYamlTools(
@@ -341,41 +427,58 @@ public final class McpServerRunner {
   }
 
   /**
-   * Registers or updates the built-in {@code execute_sql} tool when enabled.
+   * Registers or updates built-in tools for the current gates. {@code describe_sql_object} is
+   * always included when sources exist; discovery tools and {@code execute_sql} follow their
+   * respective flags.
    *
    * @return total number of tools now registered
    */
-  private static int ensureExecuteSqlRegistered(ServerHandle handle, ToolsConfig config) {
-    if (!handle.enableExecuteSql()) {
+  private static int ensureBuiltinsRegistered(ServerHandle handle, ToolsConfig config) {
+    if (config.sources().isEmpty()) {
+      if (handle.enableExecuteSql() || handle.enableBuiltinTools()) {
+        throw new IllegalArgumentException(
+            "No sources defined; built-in tools require a database source");
+      }
       return handle.registeredTools().size();
     }
 
-    String source = resolveExecuteSqlSource(config);
-    SqlToolConfig desired = BuiltinTools.executeSql(source, handle.executeSqlReadonly());
-    SqlToolConfig current = handle.registeredTools().get(BuiltinTools.EXECUTE_SQL_NAME);
-    if (desired.equals(current)) {
-      return handle.registeredTools().size();
+    String source = resolveBuiltinSource(config);
+    if (!handle.sources().hasSource(source)) {
+      throw new IllegalArgumentException(
+          "Built-in tools source '" + source
+              + "' is not available until restart (sources are not hot-reloaded)");
     }
+    List<SqlToolConfig> desired = BuiltinTools.configsForGates(
+        source,
+        handle.enableBuiltinTools(),
+        handle.enableExecuteSql(),
+        handle.executeSqlReadonly());
+    validateSelectedTools(desired);
 
-    validateSelectedTools(List.of(desired));
     McpSyncServer server = handle.server();
-    if (current != null) {
-      server.removeTool(BuiltinTools.EXECUTE_SQL_NAME);
+    for (SqlToolConfig tool : desired) {
+      SqlToolConfig current = handle.registeredTools().get(tool.name());
+      if (tool.equals(current)) {
+        continue;
+      }
+      if (current != null) {
+        server.removeTool(tool.name());
+      }
+      server.addTool(buildSpec(tool, handle.sources(), handle.toolSpecContext()));
+      handle.registeredTools().put(tool.name(), tool);
+      log.info("Registered built-in tool '{}' (source: {})", tool.name(), source);
     }
-    server.addTool(buildSpec(desired, handle.sources(), handle.toolSpecContext()));
-    handle.registeredTools().put(BuiltinTools.EXECUTE_SQL_NAME, desired);
-    log.info("Registered built-in tool '{}' (source: {})", desired.name(), source);
     return handle.registeredTools().size();
   }
 
   /**
-   * Picks the database source for {@code execute_sql}. When multiple sources exist, the first
-   * key in YAML merge order ({@link ToolsConfig#sources()} insertion order) is used.
+   * Picks the database source for built-ins. When multiple sources exist, the first key in YAML
+   * merge order ({@link ToolsConfig#sources()} insertion order) is used.
    */
-  static String resolveExecuteSqlSource(ToolsConfig config) {
+  static String resolveBuiltinSource(ToolsConfig config) {
     if (config.sources().isEmpty()) {
       throw new IllegalArgumentException(
-          "No sources defined; execute_sql requires a database source");
+          "No sources defined; built-in tools require a database source");
     }
     return config.sources().keySet().iterator().next();
   }
@@ -446,11 +549,20 @@ public final class McpServerRunner {
       Set<String> selectedToolsets) {
     try {
       ToolsConfig config = new YamlConfigLoader(env).loadAll(toolsPath, mergeOpts);
-      Map<String, SqlToolConfig> selected = config.selectTools(selectedToolsets);
+      Map<String, SqlToolConfig> selected = filterYamlCollisions(
+          config.selectTools(selectedToolsets),
+          collidingBuiltinNames(
+              config, handle.enableBuiltinTools(), handle.enableExecuteSql()));
       validateSelectedTools(selected.values());
       validateToolSources(handle.sources(), selected);
 
-      ToolReloadPlan plan = computeReloadPlan(handle.registeredTools(), selected);
+      // Gate-only set: keeps live builtins out of the YAML diff even when the reloaded
+      // config has no sources, since ensureBuiltinsRegistered would not restore them.
+      ToolReloadPlan plan = computeReloadPlan(
+          handle.registeredTools(),
+          selected,
+          BuiltinTools.activeBuiltinNames(
+              handle.enableBuiltinTools(), handle.enableExecuteSql()));
       if (plan.toRemove().isEmpty() && plan.toAdd().isEmpty()) {
         log.debug("YAML reload: no tool changes detected");
         return false;
@@ -459,7 +571,7 @@ public final class McpServerRunner {
       Map<String, SqlToolConfig> previousTools = new HashMap<>(handle.registeredTools());
       try {
         applyReloadPlan(handle, config, selected, plan);
-        ensureExecuteSqlRegistered(handle, config);
+        ensureBuiltinsRegistered(handle, config);
         handle.server().notifyToolsListChanged();
         log.info("YAML reload applied: {} removed, {} added",
             plan.toRemove().size(), plan.toAdd().size());
@@ -527,12 +639,23 @@ public final class McpServerRunner {
   static ToolReloadPlan computeReloadPlan(
       Map<String, SqlToolConfig> registered,
       Map<String, SqlToolConfig> selected) {
+    return computeReloadPlan(registered, selected, Set.of());
+  }
+
+  /**
+   * Diff YAML selection against the live registry. Names in {@code builtinNames} are never
+   * removed by YAML reload (builtins are re-asserted via {@link #ensureBuiltinsRegistered}).
+   */
+  static ToolReloadPlan computeReloadPlan(
+      Map<String, SqlToolConfig> registered,
+      Map<String, SqlToolConfig> selected,
+      Set<String> builtinNames) {
     Set<String> toRemove = new LinkedHashSet<>();
     Set<String> toAdd = new LinkedHashSet<>();
 
     for (Map.Entry<String, SqlToolConfig> entry : registered.entrySet()) {
       String name = entry.getKey();
-      if (BuiltinTools.EXECUTE_SQL_NAME.equals(name)) {
+      if (builtinNames.contains(name)) {
         continue;
       }
       SqlToolConfig newConfig = selected.get(name);
@@ -541,9 +664,13 @@ public final class McpServerRunner {
       }
     }
     for (Map.Entry<String, SqlToolConfig> entry : selected.entrySet()) {
-      SqlToolConfig oldConfig = registered.get(entry.getKey());
+      String name = entry.getKey();
+      if (builtinNames.contains(name)) {
+        continue;
+      }
+      SqlToolConfig oldConfig = registered.get(name);
       if (oldConfig == null || !oldConfig.equals(entry.getValue())) {
-        toAdd.add(entry.getKey());
+        toAdd.add(name);
       }
     }
     return new ToolReloadPlan(Set.copyOf(toRemove), Set.copyOf(toAdd));

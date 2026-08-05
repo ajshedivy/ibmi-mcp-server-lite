@@ -78,9 +78,10 @@ class ToolsYamlWatcherTest {
         });
 
     Files.writeString(yaml, yamlWithTools("tool_a", "tool_b"));
-    await(() -> handle.registeredTools().size() == 2, 3_000);
+    await(() -> handle.registeredTools().containsKey("tool_b"), 3_000);
 
-    assertEquals(2, handle.server().listTools().size());
+    assertEquals(3, handle.registeredTools().size());
+    assertEquals(3, handle.server().listTools().size());
     assertEquals(1, reloadCount.get());
   }
 

@@ -9,6 +9,11 @@ import java.util.Map;
  * <p>{@code fetchAllRows: true} enables automatic pagination up to {@link #MAX_PAGINATION_ROWS}
  * rows using {@link #DEFAULT_PAGE_SIZE} per page. This setting is ignored if {@code rowsToFetch}
  * is explicitly set (use {@link #isFetchAll()} to check the effective behavior).
+ *
+ * @param emptyResultError message returned as a tool failure when the query yields no rows,
+ *     or {@code null} to treat an empty result set as a successful answer (the default, and
+ *     the right choice for anything that filters). There is no YAML key for this; it exists
+ *     for built-ins whose empty result means "not found" rather than "nothing matched".
  */
 public record SqlToolConfig(
     String name,
@@ -25,7 +30,8 @@ public record SqlToolConfig(
     Integer rowsToFetch,
     Boolean fetchAllRows,
     String domain,
-    String category) {
+    String category,
+    String emptyResultError) {
 
   public static final int DEFAULT_ROWS_TO_FETCH = 100;
   public static final int DEFAULT_PAGE_SIZE = 1000;
@@ -49,5 +55,30 @@ public record SqlToolConfig(
   /** Resolved row cap for markdown result tables; defaults to {@link #DEFAULT_MAX_DISPLAY_ROWS}. */
   public int effectiveMaxDisplayRows() {
     return maxDisplayRows != null ? maxDisplayRows : DEFAULT_MAX_DISPLAY_ROWS;
+  }
+
+  /**
+   * Copy of this config that reports an empty result set as a failure carrying {@code message}.
+   * Kept as a wither so the built-in factory helpers do not all have to thread a parameter that
+   * only one tool sets.
+   */
+  public SqlToolConfig withEmptyResultError(String message) {
+    return new SqlToolConfig(
+        name,
+        enabled,
+        source,
+        description,
+        statement,
+        parameters,
+        responseFormat,
+        tableFormat,
+        maxDisplayRows,
+        annotations,
+        security,
+        rowsToFetch,
+        fetchAllRows,
+        domain,
+        category,
+        message);
   }
 }

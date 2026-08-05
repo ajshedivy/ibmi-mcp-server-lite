@@ -60,6 +60,7 @@ class SqlToolHandlerTest {
         null,
         null,
         null,
+        null,
         null);
     SqlToolHandler handler = new SqlToolHandler(backdoor, new SourceManager(Map.of()), mapper);
 

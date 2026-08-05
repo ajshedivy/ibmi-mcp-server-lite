@@ -5,6 +5,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.BiFunction;
+import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,7 +41,11 @@ import io.modelcontextprotocol.spec.McpSchema.CallToolResult;
  *
  * <p>When {@code fetchAllRows: true}, pagination automatically fetches up to
  * {@link SqlToolConfig#MAX_PAGINATION_ROWS} rows using {@link SqlToolConfig#DEFAULT_PAGE_SIZE}
- * per page. The {@code truncated} metadata flag indicates if results were capped.
+ * per page. Otherwise a single fetch of {@link SqlToolConfig#effectiveRowsToFetch()} rows runs.
+ * Either way the {@code truncated} metadata flag reports whether rows were left behind.
+ *
+ * <p>An empty result set is a successful answer unless the tool sets
+ * {@link SqlToolConfig#emptyResultError()}, in which case it is reported as a tool failure.
  */
 public final class SqlToolHandler
     implements BiFunction<McpSyncServerExchange, CallToolRequest, CallToolResult> {
@@ -74,6 +79,12 @@ public final class SqlToolHandler
 
       PaginatedResult paginated = executeQuery(context, bound);
 
+      if (tool.emptyResultError() != null && paginated.rows().isEmpty()) {
+        String message = tool.emptyResultError() + " (" + describeArguments(request.arguments()) + ")";
+        log.info("[{}] Tool '{}' found nothing: {}", context.requestId(), tool.name(), message);
+        return errorResult(message);
+      }
+
       long elapsed = System.currentTimeMillis() - context.startMillis();
       Map<String, Object> output = buildOutput(
           paginated, elapsed, bound.parameters().size(), bound.sql(), request.arguments(), context);
@@ -89,16 +100,37 @@ public final class SqlToolHandler
         sources.evictPool(tool.source());
       }
       log.error("[{}] Tool '{}' failed: {}", context.requestId(), tool.name(), cause.getMessage());
-      Map<String, Object> output = new LinkedHashMap<>();
-      output.put("success", false);
-      output.put("data", List.of());
-      output.put("error", cause.getMessage());
-      return CallToolResult.builder()
-          .addTextContent("Error executing '" + tool.name() + "': " + cause.getMessage())
-          .structuredContent(output)
-          .isError(true)
-          .build();
+      return errorResult(cause.getMessage());
     }
+  }
+
+  /**
+   * Failure response in the standard {@code {success, data, error}} shape. The empty-result
+   * path builds this directly rather than throwing: an empty result is not an exception, and
+   * routing it through the catch block would run the caller's arguments through
+   * {@link MapepireFailures#isConnectionLevel}, whose substring matching would evict the
+   * source pool for an object innocently named something like {@code CONNECTION_LOG}.
+   */
+  private CallToolResult errorResult(String message) {
+    Map<String, Object> output = new LinkedHashMap<>();
+    output.put("success", false);
+    output.put("data", List.of());
+    output.put("error", message);
+    return CallToolResult.builder()
+        .addTextContent("Error executing '" + tool.name() + "': " + message)
+        .structuredContent(output)
+        .isError(true)
+        .build();
+  }
+
+  /** Renders the call arguments so a "not found" message says what was actually searched for. */
+  private static String describeArguments(Map<String, Object> arguments) {
+    if (arguments == null || arguments.isEmpty()) {
+      return "no arguments";
+    }
+    return arguments.entrySet().stream()
+        .map(e -> e.getKey() + "=" + e.getValue())
+        .collect(Collectors.joining(", "));
   }
 
   /**
@@ -122,7 +154,9 @@ public final class SqlToolHandler
         } else {
           QueryResult<Object> result = query.<Object>execute(tool.effectiveRowsToFetch()).get();
           sources.recordActivity(tool.source());
-          return new PaginatedResult(result, false);
+          // Rows beyond the single-shot cap are discarded when the query closes; report that
+          // so callers can tell a complete result from a clipped one.
+          return new PaginatedResult(result, !result.getIsDone());
         }
       } finally {
         try {
@@ -201,6 +235,14 @@ public final class SqlToolHandler
     PaginatedResult(QueryResult<Object> result, boolean truncated) {
       this(result, null, truncated);
     }
+
+    /** Accumulated pages when paginated, otherwise the single fetch's rows. */
+    List<Object> rows() {
+      if (accumulatedRows != null) {
+        return accumulatedRows;
+      }
+      return result.getData() == null ? List.of() : result.getData();
+    }
   }
 
   private Map<String, Object> buildOutput(
@@ -211,10 +253,7 @@ public final class SqlToolHandler
       Map<String, Object> parameters,
       RequestContext context) {
     QueryResult<Object> result = paginated.result();
-    // Use accumulated rows if present (pagination case), otherwise use result data
-    List<Object> rows = paginated.accumulatedRows() != null
-        ? paginated.accumulatedRows()
-        : (result.getData() == null ? List.of() : result.getData());
+    List<Object> rows = paginated.rows();
 
     List<Map<String, Object>> columns = new ArrayList<>();
     if (result.getMetadata() != null && result.getMetadata().getColumns() != null) {
@@ -241,8 +280,11 @@ public final class SqlToolHandler
     }
     if (paginated.truncated()) {
       metadata.put("truncated", true);
-      log.warn("[{}] Tool '{}' result truncated at {} rows (query returned more data than MAX_PAGINATION_ROWS)",
-          context.requestId(), tool.name(), SqlToolConfig.MAX_PAGINATION_ROWS);
+      int cap = tool.isFetchAll()
+          ? SqlToolConfig.MAX_PAGINATION_ROWS
+          : tool.effectiveRowsToFetch();
+      log.warn("[{}] Tool '{}' result truncated at {} rows (row cap {}); more rows were available",
+          context.requestId(), tool.name(), rows.size(), cap);
     } else {
       metadata.put("truncated", false);
     }

@@ -148,7 +148,7 @@ public final class JsonSchemaBuilder {
     ObjectNode truncated = props.putObject("truncated");
     truncated.put("type", "boolean");
     truncated.put("description",
-        "True when fetchAllRows pagination hit the row-count safety cap");
+        "True when rows were left unread — the row cap was hit and more data was available");
 
     ObjectNode sqlStatement = props.putObject("sqlStatement");
     sqlStatement.put("type", "string");
