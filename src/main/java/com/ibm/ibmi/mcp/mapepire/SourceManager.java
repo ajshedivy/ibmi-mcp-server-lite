@@ -174,16 +174,20 @@ public final class SourceManager implements AutoCloseable {
 
   /**
    * Waits for a Mapepire execute/fetch/close future using the source's query timeout.
-   * On timeout, evicts the pool that was present when the wait started (identity check)
+   * On timeout, evicts {@code expected} only if it is still the mapped pool (identity check)
    * so a concurrent reconnect is not torn down. When {@code mcp-pool-query-timeout-ms <= 0},
    * waits indefinitely.
+   *
+   * @param expected the pool that owns {@code future}; pass the instance from {@link #getPool},
+   *     not a fresh {@code pools.get} at wait time (close after execute-timeout must not
+   *     snapshot a rebuilt pool)
    */
-  public <T> T awaitQuery(String sourceName, CompletableFuture<T> future) throws Exception {
+  public <T> T awaitQuery(String sourceName, CompletableFuture<T> future, Pool expected)
+      throws Exception {
     SourceConfig source = sources.get(sourceName);
     if (source == null) {
       throw new IllegalArgumentException("Unknown source: " + sourceName);
     }
-    Pool poolSnapshot = pools.get(sourceName);
     int timeoutMs = source.mcpPoolQueryTimeoutMs();
     try {
       if (timeoutMs <= 0) {
@@ -195,7 +199,7 @@ public final class SourceManager implements AutoCloseable {
           "Query timed out after {}ms on pool '{}'. Closing pool for re-initialization.",
           timeoutMs,
           sourceName);
-      evictPoolIfSame(sourceName, poolSnapshot);
+      evictPoolIfSame(sourceName, expected);
       throw new TimeoutException(
           "Query timed out after " + timeoutMs + "ms on pool '" + sourceName
               + "'. The connection may be stale. Pool will be re-initialized on the next request.");

@@ -232,7 +232,7 @@ class SourceManagerTest {
         SourceConfig.DEFAULT_MCP_POOL_IDLE_TIMEOUT_MS, 1_000, Map.of());
     SourceManager manager = new SourceManager(Map.of("ibmi", source));
 
-    assertEquals("ok", manager.awaitQuery("ibmi", CompletableFuture.completedFuture("ok")));
+    assertEquals("ok", manager.awaitQuery("ibmi", CompletableFuture.completedFuture("ok"), null));
   }
 
   @Test
@@ -255,7 +255,7 @@ class SourceManagerTest {
 
     TimeoutException timeout = assertThrows(
         TimeoutException.class,
-        () -> manager.awaitQuery("ibmi", new CompletableFuture<>()));
+        () -> manager.awaitQuery("ibmi", new CompletableFuture<>(), pool));
     assertTrue(timeout.getMessage().contains("50ms"));
     assertTrue(timeout.getMessage().contains("ibmi"));
     assertTrue(ended.get(), "timed-out pool should be ended");
@@ -291,7 +291,7 @@ class SourceManagerTest {
     CompletableFuture<String> never = new CompletableFuture<>();
     Thread waiter = new Thread(() -> {
       try {
-        manager.awaitQuery("ibmi", never);
+        manager.awaitQuery("ibmi", never, oldPool);
       } catch (TimeoutException expected) {
         // expected
       } catch (Exception e) {
@@ -299,7 +299,6 @@ class SourceManagerTest {
       }
     });
     waiter.start();
-    // Let awaitQuery snapshot oldPool before we replace it
     Thread.sleep(50);
     manager.evictPool("ibmi");
     registerPool(manager, "ibmi", newPool);
@@ -309,6 +308,42 @@ class SourceManagerTest {
     assertTrue(oldEnded.get(), "original timed-out pool should have been ended by concurrent evict");
     assertFalse(newEnded.get(), "replacement pool must not be ended by delayed timeout eviction");
     assertTrue(poolMap(manager).containsKey("ibmi"));
+    assertSame(newPool, poolMap(manager).get("ibmi"));
+  }
+
+  @Test
+  void awaitQuery_timeoutWithStaleExpectedDoesNotEvictCurrentPool() throws Exception {
+    // Close-after-execute-timeout race: map already holds a rebuilt pool, but the
+    // waiter still passes the old pool that owned the future.
+    SourceConfig source = new SourceConfig(
+        "ibmi", "h", 8076, "u", "p", false,
+        SourceConfig.DEFAULT_MAX_SIZE, SourceConfig.DEFAULT_STARTING_SIZE,
+        SourceConfig.DEFAULT_MCP_POOL_IDLE_TIMEOUT_MS, 50, Map.of());
+    SourceManager manager = new SourceManager(Map.of("ibmi", source));
+
+    AtomicBoolean oldEnded = new AtomicBoolean(false);
+    AtomicBoolean newEnded = new AtomicBoolean(false);
+    Pool oldPool = new Pool(SourceManager.poolOptionsFor(source)) {
+      @Override
+      public void end() {
+        oldEnded.set(true);
+      }
+    };
+    Pool newPool = new Pool(SourceManager.poolOptionsFor(source)) {
+      @Override
+      public void end() {
+        newEnded.set(true);
+      }
+    };
+    registerPool(manager, "ibmi", newPool);
+    manager.putHealth("ibmi", new SourceManager.PoolHealth(true, false, "healthy", Instant.now()));
+
+    assertThrows(
+        TimeoutException.class,
+        () -> manager.awaitQuery("ibmi", new CompletableFuture<>(), oldPool));
+
+    assertFalse(oldEnded.get());
+    assertFalse(newEnded.get());
     assertSame(newPool, poolMap(manager).get("ibmi"));
   }
 
@@ -364,7 +399,7 @@ class SourceManagerTest {
       }
     });
     completer.start();
-    assertEquals("late", manager.awaitQuery("ibmi", delayed));
+    assertEquals("late", manager.awaitQuery("ibmi", delayed, null));
     completer.join();
   }
 

@@ -149,12 +149,12 @@ public final class SqlToolHandler
 
       try {
         if (tool.isFetchAll()) {
-          PaginatedResult result = executePaginatedQuery(query);
+          PaginatedResult result = executePaginatedQuery(pool, query);
           sources.recordActivity(sourceName);
           return result;
         } else {
           QueryResult<Object> result = sources.awaitQuery(
-              sourceName, query.<Object>execute(tool.effectiveRowsToFetch()));
+              sourceName, query.<Object>execute(tool.effectiveRowsToFetch()), pool);
           sources.recordActivity(sourceName);
           // Rows beyond the single-shot cap are discarded when the query closes; report that
           // so callers can tell a complete result from a clipped one.
@@ -163,8 +163,9 @@ public final class SqlToolHandler
       } finally {
         // Bound close the same way as execute — unbounded .get() can wedge after a
         // timed-out / dead WebSocket even though awaitQuery already ended the pool.
+        // Pass the same pool instance so a close timeout cannot evict a rebuilt pool.
         try {
-          sources.awaitQuery(sourceName, query.close());
+          sources.awaitQuery(sourceName, query.close(), pool);
         } catch (Exception e) {
           if (MapepireFailures.isConnectionLevel(e)) {
             sources.evictPoolIfSame(sourceName, pool);
@@ -180,20 +181,22 @@ public final class SqlToolHandler
   /**
    * Fetches all rows up to {@link SqlToolConfig#MAX_PAGINATION_ROWS} using pagination.
    *
+   * @param pool the pool that owns {@code query}
    * @param query the Mapepire query to paginate
    * @return accumulated result with truncation flag
    */
-  private PaginatedResult executePaginatedQuery(Query query) throws Exception {
+  private PaginatedResult executePaginatedQuery(Pool pool, Query query) throws Exception {
+    String sourceName = tool.source();
     // Fetch first page - preserve this for column metadata
     QueryResult<Object> firstResult = sources.awaitQuery(
-        tool.source(), query.<Object>execute(SqlToolConfig.DEFAULT_PAGE_SIZE));
+        sourceName, query.<Object>execute(SqlToolConfig.DEFAULT_PAGE_SIZE), pool);
     QueryResult<Object> lastResult = firstResult;
     List<Object> accumulated = new ArrayList<>(firstResult.getData() != null ? firstResult.getData() : List.of());
 
     // Paginate while more data exists and under the limit
     while (!lastResult.getIsDone() && accumulated.size() < SqlToolConfig.MAX_PAGINATION_ROWS) {
       lastResult = sources.awaitQuery(
-          tool.source(), query.<Object>fetchMore(SqlToolConfig.DEFAULT_PAGE_SIZE));
+          sourceName, query.<Object>fetchMore(SqlToolConfig.DEFAULT_PAGE_SIZE), pool);
       if (lastResult.getData() != null) {
         accumulated.addAll(lastResult.getData());
       }
