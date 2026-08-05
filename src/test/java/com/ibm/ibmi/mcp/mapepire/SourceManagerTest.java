@@ -64,11 +64,11 @@ class SourceManagerTest {
   @Test
   void closeProceedsAfterGraceWhenQueryStillInFlight() {
     SourceManager manager = new SourceManager(Map.of());
-    manager.beginQuery();
+    manager.beginQuery("ibmi");
     long start = System.nanoTime();
     manager.close(Duration.ofMillis(100));
     assertTrue(Duration.ofNanos(System.nanoTime() - start).toMillis() >= 90);
-    manager.endQuery();
+    manager.endQuery("ibmi");
   }
 
   @Test
@@ -82,7 +82,7 @@ class SourceManagerTest {
   @Test
   void closeDoesNotHoldPoolLockWhileAwaitingInFlight() throws InterruptedException {
     SourceManager manager = new SourceManager(Map.of());
-    manager.beginQuery();
+    manager.beginQuery("ibmi");
 
     var getPoolFinished = new AtomicBoolean(false);
     Thread getPoolThread = new Thread(() -> {
@@ -109,7 +109,7 @@ class SourceManagerTest {
     assertTrue(
         Duration.ofNanos(System.nanoTime() - start).toMillis() < 200,
         "getPool should not block for the full shutdown grace period");
-    manager.endQuery();
+    manager.endQuery("ibmi");
     shutdownThread.join(2000);
   }
 
@@ -415,13 +415,57 @@ class SourceManagerTest {
         "ibmi",
         new SourceManager.PoolHealth(true, false, "healthy", Instant.now().minusMillis(500)));
 
-    manager.beginQuery();
+    manager.beginQuery("ibmi");
     try {
       manager.closeIdlePools();
       assertFalse(ended.get());
       assertTrue(poolMap(manager).containsKey("ibmi"));
     } finally {
-      manager.endQuery();
+      manager.endQuery("ibmi");
+    }
+  }
+
+  @Test
+  void closeIdlePools_reclaimsIdleSourceWhileOtherSourceBusy() throws Exception {
+    SourceConfig busyCfg = new SourceConfig(
+        "busy", "h", 8076, "u", "p", false,
+        SourceConfig.DEFAULT_MAX_SIZE, SourceConfig.DEFAULT_STARTING_SIZE,
+        100, SourceConfig.DEFAULT_MCP_POOL_QUERY_TIMEOUT_MS, Map.of());
+    SourceConfig idleCfg = new SourceConfig(
+        "idle", "h", 8076, "u", "p", false,
+        SourceConfig.DEFAULT_MAX_SIZE, SourceConfig.DEFAULT_STARTING_SIZE,
+        100, SourceConfig.DEFAULT_MCP_POOL_QUERY_TIMEOUT_MS, Map.of());
+    SourceManager manager = new SourceManager(Map.of("busy", busyCfg, "idle", idleCfg));
+
+    AtomicBoolean busyEnded = new AtomicBoolean(false);
+    AtomicBoolean idleEnded = new AtomicBoolean(false);
+    Pool busyPool = new Pool(SourceManager.poolOptionsFor(busyCfg)) {
+      @Override
+      public void end() {
+        busyEnded.set(true);
+      }
+    };
+    Pool idlePool = new Pool(SourceManager.poolOptionsFor(idleCfg)) {
+      @Override
+      public void end() {
+        idleEnded.set(true);
+      }
+    };
+    registerPool(manager, "busy", busyPool);
+    registerPool(manager, "idle", idlePool);
+    Instant stale = Instant.now().minusMillis(500);
+    manager.putHealth("busy", new SourceManager.PoolHealth(true, false, "healthy", stale));
+    manager.putHealth("idle", new SourceManager.PoolHealth(true, false, "healthy", stale));
+
+    manager.beginQuery("busy");
+    try {
+      manager.closeIdlePools();
+      assertFalse(busyEnded.get());
+      assertTrue(poolMap(manager).containsKey("busy"));
+      assertTrue(idleEnded.get());
+      assertFalse(poolMap(manager).containsKey("idle"));
+    } finally {
+      manager.endQuery("busy");
     }
   }
 
