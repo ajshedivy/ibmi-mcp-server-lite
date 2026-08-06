@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -229,14 +230,15 @@ public final class McpServerRunner {
 
     TestStdin testStdin = new TestStdin();
     handle.attachTestStdin(testStdin);
+    List<McpServerFeatures.SyncToolSpecification> specs =
+        buildInitialToolSpecs(handle, config, selected);
     McpSyncServer server = McpServer.sync(new StdioServerTransportProvider(
             toolSpecContext.jsonMapper(), testStdin, new ByteArrayOutputStream()))
         .serverInfo(SERVER_NAME, SERVER_VERSION)
         .capabilities(ServerCapabilities.builder().tools(true).logging().build())
+        .tools(specs)
         .build();
     handle.attachServer(server);
-    registerYamlTools(handle, config, selected, server);
-    ensureBuiltinsRegistered(handle, config);
 
     return handle;
   }
@@ -288,14 +290,15 @@ public final class McpServerRunner {
         .mcpEndpoint(transport.httpEndpoint())
         .build();
 
+    List<McpServerFeatures.SyncToolSpecification> specs =
+        buildInitialToolSpecs(handle, config, selected);
     McpSyncServer server = McpServer.sync(transportProvider)
         .serverInfo(SERVER_NAME, SERVER_VERSION)
         .capabilities(ServerCapabilities.builder().tools(true).logging().build())
+        .tools(specs)
         .build();
     handle.attachServer(server);
-
-    registerYamlTools(handle, config, selected, server);
-    int toolCount = ensureBuiltinsRegistered(handle, config);
+    int toolCount = handle.registeredTools().size();
 
     Server jetty = HttpTransport.start(
         transportProvider,
@@ -341,17 +344,20 @@ public final class McpServerRunner {
         enableBuiltinTools, enableExecuteSql, executeSqlReadonly);
     handleSlot[0] = handle;
 
+    // Register tools on the builder before build(): StdioServerTransportProvider starts
+    // reading stdin during build, so post-build addTool races early tools/list clients.
+    List<McpServerFeatures.SyncToolSpecification> specs =
+        buildInitialToolSpecs(handle, config, selected);
     McpSyncServer server = McpServer.sync(
             new StdioServerTransportProvider(toolSpecContext.jsonMapper(), stdin, stdout))
         .serverInfo(SERVER_NAME, SERVER_VERSION)
         .capabilities(ServerCapabilities.builder().tools(true).logging().build())
+        .tools(specs)
         .build();
     handle.attachServer(server);
 
-    registerYamlTools(handle, config, selected, server);
-    int toolCount = ensureBuiltinsRegistered(handle, config);
-
-    log.info("{} v{} ready on stdio with {} tools", SERVER_NAME, SERVER_VERSION, toolCount);
+    log.info("{} v{} ready on stdio with {} tools",
+        SERVER_NAME, SERVER_VERSION, handle.registeredTools().size());
     return handle;
   }
 
@@ -413,33 +419,67 @@ public final class McpServerRunner {
     return filtered;
   }
 
-  private static void registerYamlTools(
+  /**
+   * Builds YAML + built-in tool specs and populates {@code registeredTools} before the MCP
+   * server is constructed. Used for initial startup only; hot-reload still uses
+   * {@code addTool}/{@code removeTool}.
+   */
+  private static List<McpServerFeatures.SyncToolSpecification> buildInitialToolSpecs(
       ServerHandle handle,
       ToolsConfig config,
-      Map<String, SqlToolConfig> selected,
-      McpSyncServer server) {
+      Map<String, SqlToolConfig> selected) {
+    List<McpServerFeatures.SyncToolSpecification> specs = new ArrayList<>();
     for (SqlToolConfig toolConfig : selected.values()) {
-      server.addTool(buildSpec(toolConfig, handle.sources(), handle.toolSpecContext()));
+      specs.add(buildSpec(toolConfig, handle.sources(), handle.toolSpecContext()));
       handle.registeredTools().put(toolConfig.name(), toolConfig);
       log.info("Registered tool '{}' (source: {}, toolsets: {})",
           toolConfig.name(), toolConfig.source(), config.toolsetsForTool(toolConfig.name()));
     }
+    for (SqlToolConfig tool : desiredBuiltinConfigs(handle, config)) {
+      specs.add(buildSpec(tool, handle.sources(), handle.toolSpecContext()));
+      handle.registeredTools().put(tool.name(), tool);
+      log.info("Registered built-in tool '{}' (source: {})", tool.name(), tool.source());
+    }
+    return specs;
   }
 
   /**
-   * Registers or updates built-in tools for the current gates. {@code describe_sql_object} is
-   * always included when sources exist; discovery tools and {@code execute_sql} follow their
-   * respective flags.
+   * Registers or updates built-in tools for the current gates after the server is already
+   * running (hot-reload). {@code describe_sql_object} is always included when sources exist;
+   * discovery tools and {@code execute_sql} follow their respective flags.
    *
    * @return total number of tools now registered
    */
   private static int ensureBuiltinsRegistered(ServerHandle handle, ToolsConfig config) {
+    McpSyncServer server = handle.server();
+    for (SqlToolConfig tool : desiredBuiltinConfigs(handle, config)) {
+      SqlToolConfig current = handle.registeredTools().get(tool.name());
+      if (tool.equals(current)) {
+        continue;
+      }
+      if (current != null) {
+        server.removeTool(tool.name());
+      }
+      server.addTool(buildSpec(tool, handle.sources(), handle.toolSpecContext()));
+      handle.registeredTools().put(tool.name(), tool);
+      log.info("Registered built-in tool '{}' (source: {})", tool.name(), tool.source());
+    }
+    return handle.registeredTools().size();
+  }
+
+  /**
+   * Built-in configs for the current gates, or empty when no sources are defined and neither
+   * gated built-in flag is on. Throws when gated built-ins are requested without a source, or
+   * when the resolved source is missing from the live {@link SourceManager}.
+   */
+  private static List<SqlToolConfig> desiredBuiltinConfigs(
+      ServerHandle handle, ToolsConfig config) {
     if (config.sources().isEmpty()) {
       if (handle.enableExecuteSql() || handle.enableBuiltinTools()) {
         throw new IllegalArgumentException(
             "No sources defined; built-in tools require a database source");
       }
-      return handle.registeredTools().size();
+      return List.of();
     }
 
     String source = resolveBuiltinSource(config);
@@ -454,21 +494,7 @@ public final class McpServerRunner {
         handle.enableExecuteSql(),
         handle.executeSqlReadonly());
     validateSelectedTools(desired);
-
-    McpSyncServer server = handle.server();
-    for (SqlToolConfig tool : desired) {
-      SqlToolConfig current = handle.registeredTools().get(tool.name());
-      if (tool.equals(current)) {
-        continue;
-      }
-      if (current != null) {
-        server.removeTool(tool.name());
-      }
-      server.addTool(buildSpec(tool, handle.sources(), handle.toolSpecContext()));
-      handle.registeredTools().put(tool.name(), tool);
-      log.info("Registered built-in tool '{}' (source: {})", tool.name(), source);
-    }
-    return handle.registeredTools().size();
+    return desired;
   }
 
   /**
