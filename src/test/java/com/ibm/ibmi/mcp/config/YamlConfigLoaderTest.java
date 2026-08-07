@@ -294,6 +294,71 @@ class YamlConfigLoaderTest {
     assertThrows(ConfigException.class, () -> loader.parse(yaml));
   }
 
+  @Test
+  void toolsetNameWithBraceCharactersFails() {
+    String yaml = """
+        sources:
+          a:
+            host: h
+            user: u
+            password: p
+        tools:
+          t:
+            source: a
+            description: d
+            statement: SELECT 1 FROM SYSIBM.SYSDUMMY1
+        toolsets:
+          "{id}":
+            tools: [t]
+        """;
+    ConfigException e = assertThrows(ConfigException.class, () -> loader.parse(yaml));
+    assertTrue(e.getMessage().contains("URI template") || e.getMessage().contains("'{'"),
+        () -> e.getMessage());
+  }
+
+  @Test
+  void toolsetNameBlankFails() {
+    String yaml = """
+        sources:
+          a:
+            host: h
+            user: u
+            password: p
+        tools:
+          t:
+            source: a
+            description: d
+            statement: SELECT 1 FROM SYSIBM.SYSDUMMY1
+        toolsets:
+          "  ":
+            tools: [t]
+        """;
+    ConfigException e = assertThrows(ConfigException.class, () -> loader.parse(yaml));
+    assertTrue(e.getMessage().contains("must not be blank"), () -> e.getMessage());
+  }
+
+  @Test
+  void toolsetNameWithSlashFails() {
+    String yaml = """
+        sources:
+          a:
+            host: h
+            user: u
+            password: p
+        tools:
+          t:
+            source: a
+            description: d
+            statement: SELECT 1 FROM SYSIBM.SYSDUMMY1
+        toolsets:
+          "perf/ops":
+            tools: [t]
+        """;
+    ConfigException e = assertThrows(ConfigException.class, () -> loader.parse(yaml));
+    assertTrue(e.getMessage().contains("/") || e.getMessage().contains("path"),
+        () -> e.getMessage());
+  }
+
   private static String minimalYamlWithPoolKeys(String poolKeys) {
     String poolSection = poolKeys.lines()
         .map(line -> "    " + line)
