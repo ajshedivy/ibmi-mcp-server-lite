@@ -4,13 +4,17 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.PipedInputStream;
+import java.io.PipedOutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -19,6 +23,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
 import org.junit.jupiter.api.AfterEach;
@@ -205,6 +210,57 @@ class McpServerRunnerTest {
     handle = startFromYaml(yaml, Map.of(), true, true, true);
 
     assertTrue(toolNames(handle).containsAll(BuiltinTools.activeBuiltinNames(true, true)));
+  }
+
+  /**
+   * Stdio starts serving during {@code build()}. Tools must already be on the builder so a
+   * client that lists tools as soon as the server is attached sees the full set (including
+   * {@code execute_sql}, which used to be registered last via post-build {@code addTool}).
+   */
+  @Test
+  @Timeout(15)
+  void stdioToolsListIsCompleteAsSoonAsServerIsAttached(@TempDir Path tempDir) throws Exception {
+    Path yaml = tempDir.resolve("tools.yaml");
+    Files.writeString(yaml, yamlWithTools("tool_a", "tool_b", "tool_c"));
+    ToolsConfig config = new YamlConfigLoader(Map.of()).load(yaml);
+
+    PipedOutputStream clientToServer = new PipedOutputStream();
+    PipedInputStream serverStdin = new PipedInputStream(clientToServer, 1 << 16);
+    ByteArrayOutputStream serverStdout = new ByteArrayOutputStream();
+
+    McpServerRunner.ServerHandle[] slot = new McpServerRunner.ServerHandle[1];
+    AtomicReference<Throwable> serverError = new AtomicReference<>();
+    Thread serverThread = new Thread(() -> {
+      try {
+        McpServerRunner.start(
+            config, Set.of(), serverStdin, slot, serverStdout, true, true, true);
+      } catch (Throwable t) {
+        serverError.set(t);
+      }
+    }, "stdio-startup-race");
+    serverThread.setDaemon(true);
+    serverThread.start();
+
+    try {
+      await(() -> slot[0] != null && slot[0].server() != null, 5_000);
+      assertNull(serverError.get(), () -> "server thread failed: " + serverError.get());
+
+      Set<String> expected = new HashSet<>();
+      expected.add("tool_a");
+      expected.add("tool_b");
+      expected.add("tool_c");
+      expected.addAll(BuiltinTools.activeBuiltinNames(true, true));
+
+      // Immediate check — must not require waiting for post-build addTool.
+      assertEquals(expected, toolNames(slot[0]));
+      assertTrue(toolNames(slot[0]).contains(BuiltinTools.EXECUTE_SQL_NAME));
+      assertEquals(expected, slot[0].registeredTools().keySet());
+    } finally {
+      if (slot[0] != null) {
+        handle = slot[0];
+      }
+      clientToServer.close();
+    }
   }
 
   @Test
