@@ -215,16 +215,18 @@ transport has **no authentication** and `MCP_HTTP_HOST` defaults to `0.0.0.0`; b
 `127.0.0.1` or put it behind an authenticating proxy.
 
 - **Hot-reload** (default on): when any resolved YAML file changes on disk, the server
-  re-merges and updates live sources and tools without restarting. See
-  [Hot-reloading YAML sources and tools](#hot-reloading-yaml-sources-and-tools) below.
+  re-merges and updates live sources, tools, and `toolsets://` resources without restarting.
+  See [Hot-reloading YAML sources, tools, and resources](#hot-reloading-yaml-sources-tools-and-resources)
+  below.
 
-## Hot-reloading YAML sources and tools
+## Hot-reloading YAML sources, tools, and resources
 
 When `YAML_AUTO_RELOAD` is enabled (the default), the server watches every YAML file
-resolved from `--tools` (file, directory, or glob) and live-updates sources and the MCP
-tool registry on save. Reload re-runs the same merge path as startup (`YAML_MERGE_*`
-flags apply), then sends `notifications/tools/list_changed` so connected clients re-fetch
-`tools/list`.
+resolved from `--tools` (file, directory, or glob) and live-updates sources, the MCP
+tool registry, and `toolsets://` catalog/detail resources on save. Reload re-runs the same
+merge path as startup (`YAML_MERGE_*` flags apply), then sends
+`notifications/tools/list_changed` so connected clients re-fetch `tools/list`. Resource
+URI add/remove/refresh already emits `notifications/resources/list_changed`.
 
 Source changes are applied by name:
 
@@ -248,7 +250,7 @@ YAML reload applied: sources +0 ~0 -0; tools -0 +1
 ```
 
 **Validate YAML before relying on reload** — a bad save is logged and the previous source
-configuration and tool set are kept:
+configuration, tool set, and `toolsets://` URIs are kept:
 
 ```bash
 java -jar target/ibmi-mcp-server-lite-0.1.0.jar --tools tools --list-tools

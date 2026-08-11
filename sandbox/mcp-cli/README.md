@@ -46,7 +46,7 @@ uv run ibmi-mcp list --tools path/to/other-tools.yaml # load a different tools f
 - Each `list` / `call` spawns a **new** server process — handy for one-shot tests, but
   not for exercising **hot-reload**. To test reload, run the jar directly and leave it
   running while editing the YAML (see the main
-  [README](../../README.md#hot-reloading-yaml-sources-and-tools)).
+  [README](../../README.md#hot-reloading-yaml-sources-tools-and-resources)).
 - `name=value` argument values are coerced from the tool's input schema
   (`integer`/`number`/`boolean`/`array`); use `--args-json` for full control.
 - Default `call` output is one JSON row per line (NDJSON) — pipe to `jq`. `--json`

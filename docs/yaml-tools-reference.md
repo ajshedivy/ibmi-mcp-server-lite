@@ -211,16 +211,19 @@ try a flattened variant (`/**/*.yaml` also matches `/*.yaml` at the walk root).
 When `YAML_AUTO_RELOAD` is enabled (default), the server watches every YAML file resolved
 from `--tools` (single file, directory, or glob) and re-parses the full merged config on
 change. Source changes are applied before the live MCP registry is updated via
-`removeTool` / `addTool`; clients then receive `notifications/tools/list_changed`.
-Reload uses the same `loadAll` path and `YAML_MERGE_*` flags as startup.
+`removeTool` / `addTool` and `toolsets://` resource sync; clients then receive
+`notifications/tools/list_changed` (and `notifications/resources/list_changed` from the
+SDK when resource URIs change). Reload uses the same `loadAll` path and `YAML_MERGE_*`
+flags as startup.
 
 | Setting | Default | Disable with |
 |---|---|---|
 | `YAML_AUTO_RELOAD` in `.env` / process env | on (`true` / `1`, or unset) | `YAML_AUTO_RELOAD=false` or `--no-reload` |
 
 On a failed reload (parse error, validation failure, unknown source, or apply failure), the
-server logs the error to stderr and **keeps the previous sources and tool set**. Security
-validation (`readOnly` defaults, etc.) is re-applied on every reload, same as at startup.
+server logs the error to stderr and **keeps the previous sources, tool set, and
+`toolsets://` resource URIs**. Security validation (`readOnly` defaults, etc.) is
+re-applied on every reload, same as at startup.
 
 Sources are diffed by name and full configuration. Unchanged sources keep their current
 Mapepire pools. Added sources remain lazy until first use. Updated and removed sources wait

@@ -270,6 +270,39 @@ class ToolsetsResourcesIntegrationTest {
   }
 
   @Test
+  void reload_failureAfterSourceApplyRestoresPriorSourcesToolsAndResourceUris(
+      @TempDir Path tempDir) throws Exception {
+    Path yaml = tempDir.resolve("tools.yaml");
+    Files.writeString(yaml, yamlWithToolset("discovery", "list_libs"));
+    Map<String, String> env = Map.of();
+    MergeOptions mergeOpts = MergeOptions.fromEnv(env);
+    handle = start(yaml);
+
+    Set<String> previousTools = Set.copyOf(handle.registeredTools().keySet());
+    var previousSources = handle.sources().snapshotConfigs();
+    Set<String> previousUris = resourceUris(handle);
+
+    Files.writeString(
+        yaml,
+        yamlWithTwoToolsets().replace("host: localhost", "host: replacement.example.com"));
+
+    assertFalse(McpServerRunner.reloadWithHook(
+        handle,
+        yaml.toString(),
+        env,
+        mergeOpts,
+        Set.of(),
+        () -> {
+          throw new IllegalStateException("forced failure after source apply");
+        }));
+
+    assertEquals(previousSources, handle.sources().snapshotConfigs());
+    assertEquals(previousTools, handle.registeredTools().keySet());
+    assertEquals(previousUris, resourceUris(handle));
+    assertFalse(resourceUris(handle).contains("toolsets://performance"));
+  }
+
+  @Test
   void catalogRead_emptyToolsets_throwsMcpError(@TempDir Path tempDir) throws Exception {
     Path yaml = tempDir.resolve("tools.yaml");
     Files.writeString(yaml, """
