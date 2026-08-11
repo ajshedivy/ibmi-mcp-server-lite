@@ -486,6 +486,16 @@ public final class YamlConfigLoader {
     Map<String, ToolsetConfig> result = new LinkedHashMap<>();
     for (var entry : section.entrySet()) {
       String name = entry.getKey();
+      // Resource URIs are toolsets://{name}. Blank and '/' collide with the catalog URI
+      // (toolsets:// / toolsets:///). {…} is treated as an MCP URI template by the SDK.
+      if (name == null || name.isBlank()) {
+        throw new ConfigException("Toolset name must not be blank");
+      }
+      if (name.indexOf('{') >= 0 || name.indexOf('}') >= 0 || name.indexOf('/') >= 0) {
+        throw new ConfigException(
+            "Toolset '" + name + "' must not contain '{', '}', or '/' "
+                + "(URI template / path characters)");
+      }
       Map<String, Object> ts = asMap(entry.getValue(), "toolset '" + name + "'");
       if (!(ts.get("tools") instanceof List<?> list) || list.isEmpty()) {
         throw new ConfigException("Toolset '" + name + "' must contain at least one tool");

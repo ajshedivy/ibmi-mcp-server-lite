@@ -11,9 +11,11 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Collectors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,10 +23,13 @@ import org.slf4j.LoggerFactory;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ibm.ibmi.mcp.config.MergeOptions;
 import com.ibm.ibmi.mcp.config.SqlToolConfig;
+import com.ibm.ibmi.mcp.config.ToolsetConfig;
 import com.ibm.ibmi.mcp.config.ToolsConfig;
 import com.ibm.ibmi.mcp.config.YamlConfigLoader;
 import com.ibm.ibmi.mcp.mapepire.SourceManager;
 import com.ibm.ibmi.mcp.schema.JsonSchemaBuilder;
+import com.ibm.ibmi.mcp.server.resources.ToolsetsResourceLogic;
+import com.ibm.ibmi.mcp.server.resources.ToolsetsResourceRegistrar;
 import com.ibm.ibmi.mcp.sql.ParameterProcessor;
 import com.ibm.ibmi.mcp.sql.SqlSecurityValidator;
 
@@ -35,6 +40,7 @@ import io.modelcontextprotocol.server.McpServerFeatures;
 import io.modelcontextprotocol.server.McpSyncServer;
 import io.modelcontextprotocol.server.transport.HttpServletStreamableServerTransportProvider;
 import io.modelcontextprotocol.server.transport.StdioServerTransportProvider;
+import io.modelcontextprotocol.spec.McpSchema.Resource;
 import io.modelcontextprotocol.spec.McpSchema.ServerCapabilities;
 import io.modelcontextprotocol.spec.McpSchema.Tool;
 import io.modelcontextprotocol.spec.McpSchema.ToolAnnotations;
@@ -69,6 +75,11 @@ public final class McpServerRunner {
     private volatile ToolsYamlWatcher yamlWatcher;
     private volatile TestStdin testStdin;
     private volatile Server jettyServer;
+    /**
+     * Latest merged YAML config — resource read handlers use {@link #toolsetsSnapshot()}.
+     * Published atomically and never mutated in place; readers use a volatile load only.
+     */
+    private volatile ToolsConfig toolsConfig;
     private final AtomicBoolean closed = new AtomicBoolean(false);
 
     ServerHandle(
@@ -132,6 +143,23 @@ public final class McpServerRunner {
 
     boolean executeSqlReadonly() {
       return executeSqlReadonly;
+    }
+
+    void updateToolsConfig(ToolsConfig config) {
+      this.toolsConfig = config;
+    }
+
+    public ToolsConfig toolsConfig() {
+      return toolsConfig;
+    }
+
+    /**
+     * Current toolset map for resource handlers (empty when config not yet set).
+     * Lock-free volatile read — {@code ToolsConfig} is replaced as a whole, never mutated.
+     */
+    public Map<String, ToolsetConfig> toolsetsSnapshot() {
+      ToolsConfig config = toolsConfig;
+      return config == null ? Map.of() : config.toolsets();
     }
 
     @Override
@@ -230,13 +258,16 @@ public final class McpServerRunner {
 
     TestStdin testStdin = new TestStdin();
     handle.attachTestStdin(testStdin);
-    List<McpServerFeatures.SyncToolSpecification> specs =
+    List<McpServerFeatures.SyncToolSpecification> toolSpecs =
         buildInitialToolSpecs(handle, config, selected);
+    List<McpServerFeatures.SyncResourceSpecification> resourceSpecs =
+        buildInitialResourceSpecs(handle, config);
     McpSyncServer server = McpServer.sync(new StdioServerTransportProvider(
             toolSpecContext.jsonMapper(), testStdin, new ByteArrayOutputStream()))
         .serverInfo(SERVER_NAME, SERVER_VERSION)
-        .capabilities(ServerCapabilities.builder().tools(true).logging().build())
-        .tools(specs)
+        .capabilities(ServerCapabilities.builder().resources(false, true).tools(true).logging().build())
+        .tools(toolSpecs)
+        .resources(resourceSpecs)
         .build();
     handle.attachServer(server);
 
@@ -290,12 +321,15 @@ public final class McpServerRunner {
         .mcpEndpoint(transport.httpEndpoint())
         .build();
 
-    List<McpServerFeatures.SyncToolSpecification> specs =
+    List<McpServerFeatures.SyncToolSpecification> toolSpecs =
         buildInitialToolSpecs(handle, config, selected);
+    List<McpServerFeatures.SyncResourceSpecification> resourceSpecs =
+        buildInitialResourceSpecs(handle, config);
     McpSyncServer server = McpServer.sync(transportProvider)
         .serverInfo(SERVER_NAME, SERVER_VERSION)
-        .capabilities(ServerCapabilities.builder().tools(true).logging().build())
-        .tools(specs)
+        .capabilities(ServerCapabilities.builder().resources(false, true).tools(true).logging().build())
+        .tools(toolSpecs)
+        .resources(resourceSpecs)
         .build();
     handle.attachServer(server);
     int toolCount = handle.registeredTools().size();
@@ -344,15 +378,19 @@ public final class McpServerRunner {
         enableBuiltinTools, enableExecuteSql, executeSqlReadonly);
     handleSlot[0] = handle;
 
-    // Register tools on the builder before build(): StdioServerTransportProvider starts
-    // reading stdin during build, so post-build addTool races early tools/list clients.
-    List<McpServerFeatures.SyncToolSpecification> specs =
+    // Register tools and toolset resources on the builder before build():
+    // StdioServerTransportProvider starts reading stdin during build, so post-build
+    // addTool/addResource races early tools/list and resources/list clients.
+    List<McpServerFeatures.SyncToolSpecification> toolSpecs =
         buildInitialToolSpecs(handle, config, selected);
+    List<McpServerFeatures.SyncResourceSpecification> resourceSpecs =
+        buildInitialResourceSpecs(handle, config);
     McpSyncServer server = McpServer.sync(
             new StdioServerTransportProvider(toolSpecContext.jsonMapper(), stdin, stdout))
         .serverInfo(SERVER_NAME, SERVER_VERSION)
-        .capabilities(ServerCapabilities.builder().tools(true).logging().build())
-        .tools(specs)
+        .capabilities(ServerCapabilities.builder().resources(false, true).tools(true).logging().build())
+        .tools(toolSpecs)
+        .resources(resourceSpecs)
         .build();
     handle.attachServer(server);
 
@@ -444,6 +482,108 @@ public final class McpServerRunner {
   }
 
   /**
+   * Builds toolsets catalog + detail resource specs and publishes the tools-config snapshot
+   * before the MCP server is constructed. Used for initial startup only; hot-reload still
+   * uses {@link #syncToolsetResources}.
+   */
+  private static List<McpServerFeatures.SyncResourceSpecification> buildInitialResourceSpecs(
+      ServerHandle handle, ToolsConfig config) {
+    // Publish before building specs so list metadata and early reads see live content.
+    handle.updateToolsConfig(config);
+    ObjectMapper mapper = handle.toolSpecContext().mapper();
+    List<McpServerFeatures.SyncResourceSpecification> specs = new ArrayList<>();
+    specs.add(ToolsetsResourceRegistrar.catalogSpec(mapper, handle::toolsetsSnapshot));
+    log.info("Registered toolsets resource '{}'", ToolsetsResourceLogic.CATALOG_URI);
+    for (String name : config.toolsets().keySet()) {
+      specs.add(ToolsetsResourceRegistrar.toolsetSpec(name, mapper, handle::toolsetsSnapshot));
+      log.info("Registered toolsets resource '{}'", ToolsetsResourceLogic.uriFor(name));
+    }
+    return specs;
+  }
+
+  /**
+   * Aligns MCP resources with the current toolset map: catalog {@code toolsets://} plus
+   * one {@code toolsets://{name}} per toolset. Updates the handle snapshot so read handlers
+   * see live content. Returns {@code true} when the URI set or list metadata changed (SDK
+   * {@code listChanged} notifies on each add/remove/refresh).
+   *
+   * <p>Same concurrency model as tool hot-reload: no lock. The YAML watcher serializes
+   * reloads; under Streamable HTTP with concurrent clients, in-flight
+   * {@code resources/list} may observe intermediate URI sets and a read of a URI that
+   * disappears mid-reload returns {@code RESOURCE_NOT_FOUND} (fail-closed). Readers always
+   * see a complete {@link ToolsConfig} via volatile {@link ServerHandle#toolsetsSnapshot()}
+   * (config is never mutated in place).
+   *
+   * <p>Order: publish snapshot → register/refresh desired URIs → drop obsolete URIs.
+   * Metadata refresh uses in-place {@code addResource} replace (SDK put) so the URI never
+   * disappears mid-sync. The SDK resource map (filtered to {@code toolsets://}) is the
+   * source of truth for the current URI set.
+   */
+  static boolean syncToolsetResources(ServerHandle handle, ToolsConfig config) {
+    McpSyncServer server = handle.server();
+    if (server == null) {
+      return false;
+    }
+
+    ToolsConfig previous = handle.toolsConfig();
+    Map<String, ToolsetConfig> previousToolsets =
+        previous == null ? Map.of() : previous.toolsets();
+    Set<String> current = currentToolsetResourceUris(server);
+    Set<String> desired = ToolsetsResourceRegistrar.desiredUris(config.toolsets());
+    ObjectMapper mapper = handle.toolSpecContext().mapper();
+    boolean changed = false;
+
+    // 1) Publish the new snapshot before registering / refreshing URIs so newly
+    //    added detail URIs can serve reads as soon as they appear in resources/list.
+    handle.updateToolsConfig(config);
+
+    if (!current.contains(ToolsetsResourceLogic.CATALOG_URI)) {
+      server.addResource(ToolsetsResourceRegistrar.catalogSpec(mapper, handle::toolsetsSnapshot));
+      changed = true;
+      log.info("Registered toolsets resource '{}'", ToolsetsResourceLogic.CATALOG_URI);
+    }
+
+    // 2) Add new per-toolset URIs, or replace in place when ToolsetConfig changed so
+    //    list metadata (description / tool count) updates without a remove gap.
+    for (String name : config.toolsets().keySet()) {
+      String uri = ToolsetsResourceLogic.uriFor(name);
+      boolean alreadyRegistered = current.contains(uri);
+      boolean configChanged = !Objects.equals(
+          previousToolsets.get(name), config.toolsets().get(name));
+      if (alreadyRegistered && !configChanged) {
+        continue;
+      }
+      server.addResource(
+          ToolsetsResourceRegistrar.toolsetSpec(name, mapper, handle::toolsetsSnapshot));
+      changed = true;
+      if (alreadyRegistered) {
+        log.info("Refreshed toolsets resource '{}'", uri);
+      } else {
+        log.info("Registered toolsets resource '{}'", uri);
+      }
+    }
+
+    // 3) Drop removed URIs after desired ones are registered against the new snapshot.
+    for (String uri : current) {
+      if (!desired.contains(uri)) {
+        server.removeResource(uri);
+        changed = true;
+        log.info("Removed toolsets resource '{}'", uri);
+      }
+    }
+
+    return changed;
+  }
+
+  /** {@code toolsets://} URIs currently registered with the SDK (source of truth). */
+  static Set<String> currentToolsetResourceUris(McpSyncServer server) {
+    return server.listResources().stream()
+        .map(Resource::uri)
+        .filter(uri -> uri != null && uri.startsWith(ToolsetsResourceLogic.URI_PREFIX))
+        .collect(Collectors.toCollection(LinkedHashSet::new));
+  }
+
+  /**
    * Registers or updates built-in tools for the current gates after the server is already
    * running (hot-reload). {@code describe_sql_object} is always included when sources exist;
    * discovery tools and {@code execute_sql} follow their respective flags.
@@ -513,7 +653,7 @@ public final class McpServerRunner {
    * Watches resolved tools YAML files and hot-reloads the registry when any changes.
    *
    * <p>Under Streamable HTTP with multiple concurrent clients, reload is best-effort:
-   * in-flight requests may observe the previous or updated tool set.
+   * in-flight requests may observe the previous or updated tool / resource set.
    */
   public static void attachYamlWatcher(
       ServerHandle handle,
@@ -560,12 +700,13 @@ public final class McpServerRunner {
   }
 
   /**
-   * Re-parses the tools YAML and updates the live MCP tool registry.
+   * Re-parses the tools YAML and updates the live MCP tool and toolset-resource registries.
    *
    * <p>On parse/validation failure, logs to stderr and leaves the previous registration
-   * untouched. Never throws to the caller (safe to invoke from a watcher thread).
+   * untouched. If tools or resources mutate and then fail, both are restored to the
+   * pre-reload snapshot. Never throws to the caller (safe to invoke from a watcher thread).
    *
-   * @return {@code true} when tools were updated, {@code false} when reload was skipped
+   * @return {@code true} when tools or resource URIs were updated, {@code false} when skipped
    */
   public static boolean reload(
       ServerHandle handle,
@@ -573,6 +714,9 @@ public final class McpServerRunner {
       Map<String, String> env,
       MergeOptions mergeOpts,
       Set<String> selectedToolsets) {
+    ToolsConfig previousConfig = handle.toolsConfig();
+    Map<String, SqlToolConfig> previousTools = null;
+    boolean toolsMutated = false;
     try {
       ToolsConfig config = new YamlConfigLoader(env).loadAll(toolsPath, mergeOpts);
       Map<String, SqlToolConfig> selected = filterYamlCollisions(
@@ -589,27 +733,70 @@ public final class McpServerRunner {
           selected,
           BuiltinTools.activeBuiltinNames(
               handle.enableBuiltinTools(), handle.enableExecuteSql()));
-      if (plan.toRemove().isEmpty() && plan.toAdd().isEmpty()) {
-        log.debug("YAML reload: no tool changes detected");
-        return false;
+      boolean toolsChanged = !plan.toRemove().isEmpty() || !plan.toAdd().isEmpty();
+
+      previousTools = new HashMap<>(handle.registeredTools());
+
+      if (toolsChanged) {
+        applyReloadPlan(handle, config, selected, plan);
+        toolsMutated = true;
+        ensureBuiltinsRegistered(handle, config);
       }
 
-      Map<String, SqlToolConfig> previousTools = new HashMap<>(handle.registeredTools());
-      try {
-        applyReloadPlan(handle, config, selected, plan);
-        ensureBuiltinsRegistered(handle, config);
+      // SDK addResource/removeResource already emit resources/list_changed when capability
+      // listChanged is true — do not call notifyResourcesListChanged again here.
+      boolean resourcesChanged = syncToolsetResources(handle, config);
+      if (resourcesChanged) {
+        log.info("YAML reload updated toolsets resources");
+      }
+
+      // Notify tools only after resources sync succeeds so a failed sync + rollback
+      // does not leave clients acting on a tools/list_changed that was later reverted.
+      if (toolsChanged) {
         handle.server().notifyToolsListChanged();
         log.info("YAML reload applied: {} removed, {} added",
             plan.toRemove().size(), plan.toAdd().size());
-        return true;
-      } catch (Exception e) {
-        rollbackTools(handle, previousTools);
-        throw e;
       }
+
+      if (!toolsChanged && !resourcesChanged) {
+        log.debug("YAML reload: no tool or toolset-resource changes detected");
+        return false;
+      }
+      return true;
     } catch (Exception e) {
-      log.warn("YAML reload failed; keeping previous tool registration: {}", e.getMessage());
+      restoreAfterReloadFailure(handle, previousTools, toolsMutated, previousConfig);
+      log.warn("YAML reload failed; restored previous tool and resource registration: {}",
+          e.getMessage());
       log.debug("YAML reload failure", e);
       return false;
+    }
+  }
+
+  /**
+   * Restores tools and toolset resources after a failed reload mutation. Safe when
+   * {@code previousTools} is null (failure before snapshot) or {@code previousConfig}
+   * is null (no prior successful resource sync).
+   */
+  static void restoreAfterReloadFailure(
+      ServerHandle handle,
+      Map<String, SqlToolConfig> previousTools,
+      boolean toolsMutated,
+      ToolsConfig previousConfig) {
+    if (toolsMutated && previousTools != null) {
+      try {
+        rollbackTools(handle, previousTools);
+      } catch (Exception rollbackEx) {
+        log.warn("Tool rollback after failed reload also failed: {}", rollbackEx.getMessage());
+        log.debug("Tool rollback failure", rollbackEx);
+      }
+    }
+    if (previousConfig != null) {
+      try {
+        syncToolsetResources(handle, previousConfig);
+      } catch (Exception resourceEx) {
+        log.warn("Resource restore after failed reload also failed: {}", resourceEx.getMessage());
+        log.debug("Resource restore failure", resourceEx);
+      }
     }
   }
 
