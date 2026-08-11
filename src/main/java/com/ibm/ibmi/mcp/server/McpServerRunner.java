@@ -258,16 +258,18 @@ public final class McpServerRunner {
 
     TestStdin testStdin = new TestStdin();
     handle.attachTestStdin(testStdin);
-    List<McpServerFeatures.SyncToolSpecification> specs =
+    List<McpServerFeatures.SyncToolSpecification> toolSpecs =
         buildInitialToolSpecs(handle, config, selected);
+    List<McpServerFeatures.SyncResourceSpecification> resourceSpecs =
+        buildInitialResourceSpecs(handle, config);
     McpSyncServer server = McpServer.sync(new StdioServerTransportProvider(
             toolSpecContext.jsonMapper(), testStdin, new ByteArrayOutputStream()))
         .serverInfo(SERVER_NAME, SERVER_VERSION)
         .capabilities(ServerCapabilities.builder().resources(false, true).tools(true).logging().build())
-        .tools(specs)
+        .tools(toolSpecs)
+        .resources(resourceSpecs)
         .build();
     handle.attachServer(server);
-    syncToolsetResources(handle, config);
 
     return handle;
   }
@@ -319,16 +321,18 @@ public final class McpServerRunner {
         .mcpEndpoint(transport.httpEndpoint())
         .build();
 
-    List<McpServerFeatures.SyncToolSpecification> specs =
+    List<McpServerFeatures.SyncToolSpecification> toolSpecs =
         buildInitialToolSpecs(handle, config, selected);
+    List<McpServerFeatures.SyncResourceSpecification> resourceSpecs =
+        buildInitialResourceSpecs(handle, config);
     McpSyncServer server = McpServer.sync(transportProvider)
         .serverInfo(SERVER_NAME, SERVER_VERSION)
         .capabilities(ServerCapabilities.builder().resources(false, true).tools(true).logging().build())
-        .tools(specs)
+        .tools(toolSpecs)
+        .resources(resourceSpecs)
         .build();
     handle.attachServer(server);
     int toolCount = handle.registeredTools().size();
-    syncToolsetResources(handle, config);
 
     Server jetty = HttpTransport.start(
         transportProvider,
@@ -374,18 +378,21 @@ public final class McpServerRunner {
         enableBuiltinTools, enableExecuteSql, executeSqlReadonly);
     handleSlot[0] = handle;
 
-    // Register tools on the builder before build(): StdioServerTransportProvider starts
-    // reading stdin during build, so post-build addTool races early tools/list clients.
-    List<McpServerFeatures.SyncToolSpecification> specs =
+    // Register tools and toolset resources on the builder before build():
+    // StdioServerTransportProvider starts reading stdin during build, so post-build
+    // addTool/addResource races early tools/list and resources/list clients.
+    List<McpServerFeatures.SyncToolSpecification> toolSpecs =
         buildInitialToolSpecs(handle, config, selected);
+    List<McpServerFeatures.SyncResourceSpecification> resourceSpecs =
+        buildInitialResourceSpecs(handle, config);
     McpSyncServer server = McpServer.sync(
             new StdioServerTransportProvider(toolSpecContext.jsonMapper(), stdin, stdout))
         .serverInfo(SERVER_NAME, SERVER_VERSION)
         .capabilities(ServerCapabilities.builder().resources(false, true).tools(true).logging().build())
-        .tools(specs)
+        .tools(toolSpecs)
+        .resources(resourceSpecs)
         .build();
     handle.attachServer(server);
-    syncToolsetResources(handle, config);
 
     log.info("{} v{} ready on stdio with {} tools",
         SERVER_NAME, SERVER_VERSION, handle.registeredTools().size());
@@ -470,6 +477,26 @@ public final class McpServerRunner {
       specs.add(buildSpec(tool, handle.sources(), handle.toolSpecContext()));
       handle.registeredTools().put(tool.name(), tool);
       log.info("Registered built-in tool '{}' (source: {})", tool.name(), tool.source());
+    }
+    return specs;
+  }
+
+  /**
+   * Builds toolsets catalog + detail resource specs and publishes the tools-config snapshot
+   * before the MCP server is constructed. Used for initial startup only; hot-reload still
+   * uses {@link #syncToolsetResources}.
+   */
+  private static List<McpServerFeatures.SyncResourceSpecification> buildInitialResourceSpecs(
+      ServerHandle handle, ToolsConfig config) {
+    // Publish before building specs so list metadata and early reads see live content.
+    handle.updateToolsConfig(config);
+    ObjectMapper mapper = handle.toolSpecContext().mapper();
+    List<McpServerFeatures.SyncResourceSpecification> specs = new ArrayList<>();
+    specs.add(ToolsetsResourceRegistrar.catalogSpec(mapper, handle::toolsetsSnapshot));
+    log.info("Registered toolsets resource '{}'", ToolsetsResourceLogic.CATALOG_URI);
+    for (String name : config.toolsets().keySet()) {
+      specs.add(ToolsetsResourceRegistrar.toolsetSpec(name, mapper, handle::toolsetsSnapshot));
+      log.info("Registered toolsets resource '{}'", ToolsetsResourceLogic.uriFor(name));
     }
     return specs;
   }
