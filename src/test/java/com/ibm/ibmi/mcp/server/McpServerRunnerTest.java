@@ -269,7 +269,7 @@ class McpServerRunnerTest {
     Files.writeString(yaml, """
         sources:
           ibmi-system:
-            host: localhost
+            host: replacement.example.com
             user: user
             password: pass
         tools:
@@ -614,7 +614,7 @@ class McpServerRunnerTest {
     Files.writeString(yaml, """
         sources:
           ibmi-system:
-            host: localhost
+            host: replacement.example.com
             user: user
             password: pass
         tools:
@@ -626,10 +626,13 @@ class McpServerRunnerTest {
         handle, yaml.toString(), env, mergeOpts, Set.of()));
     assertEquals(before, toolNames(handle));
     assertEquals(2, handle.registeredTools().size());
+    assertEquals(
+        "localhost",
+        handle.sources().snapshotConfigs().get("ibmi-system").host());
   }
 
   @Test
-  void reload_swallowsNewSourceAndKeepsPriorTools(@TempDir Path tempDir) throws Exception {
+  void reload_appliesSourceOnlyConfigChange(@TempDir Path tempDir) throws Exception {
     Path yaml = tempDir.resolve("tools.yaml");
     Files.writeString(yaml, yamlWithTools("tool_a"));
     Map<String, String> env = Map.of();
@@ -637,6 +640,56 @@ class McpServerRunnerTest {
 
     handle = startFromYaml(yaml, env);
     Set<String> before = toolNames(handle);
+    Files.writeString(
+        yaml,
+        yamlWithTools("tool_a").replace("host: localhost", "host: replacement.example.com"));
+
+    assertTrue(McpServerRunner.reload(
+        handle, yaml.toString(), env, mergeOpts, Set.of()));
+    assertEquals(
+        "replacement.example.com",
+        handle.sources().snapshotConfigs().get("ibmi-system").host());
+    assertEquals(before, toolNames(handle));
+  }
+
+  @Test
+  void reload_failureAfterSourceApplyRestoresPriorSourcesAndTools(@TempDir Path tempDir)
+      throws Exception {
+    Path yaml = tempDir.resolve("tools.yaml");
+    Files.writeString(yaml, yamlWithTools("tool_a"));
+    Map<String, String> env = Map.of();
+    MergeOptions mergeOpts = MergeOptions.fromEnv(env);
+
+    handle = startFromYaml(yaml, env);
+    Set<String> previousTools = toolNames(handle);
+    Map<String, SourceConfig> previousSources = handle.sources().snapshotConfigs();
+    Files.writeString(
+        yaml,
+        yamlWithTools("tool_b").replace("host: localhost", "host: replacement.example.com"));
+
+    assertFalse(McpServerRunner.reloadWithHook(
+        handle,
+        yaml.toString(),
+        env,
+        mergeOpts,
+        Set.of(),
+        () -> {
+          throw new IllegalStateException("forced failure after source apply");
+        }));
+    assertEquals(previousSources, handle.sources().snapshotConfigs());
+    assertEquals(previousTools, toolNames(handle));
+    assertTrue(handle.registeredTools().containsKey("tool_a"));
+    assertFalse(handle.registeredTools().containsKey("tool_b"));
+  }
+
+  @Test
+  void reload_addsNewSourceAndTool(@TempDir Path tempDir) throws Exception {
+    Path yaml = tempDir.resolve("tools.yaml");
+    Files.writeString(yaml, yamlWithTools("tool_a"));
+    Map<String, String> env = Map.of();
+    MergeOptions mergeOpts = MergeOptions.fromEnv(env);
+
+    handle = startFromYaml(yaml, env);
 
     Files.writeString(yaml, """
         sources:
@@ -654,24 +707,24 @@ class McpServerRunnerTest {
             description: uses source not in startup SourceManager
             statement: SELECT 1 FROM SYSIBM.SYSDUMMY1
         """);
-    assertFalse(McpServerRunner.reload(
+    assertTrue(McpServerRunner.reload(
         handle, yaml.toString(), env, mergeOpts, Set.of()));
-    assertEquals(before, toolNames(handle));
+    assertTrue(handle.sources().hasSource("other-system"));
+    assertEquals(
+        Set.of(BuiltinTools.DESCRIBE_SQL_OBJECT_NAME, "tool_on_new_source"),
+        toolNames(handle));
     assertEquals(2, handle.registeredTools().size());
   }
 
   @Test
-  void reload_swallowsBuiltinSourceNotInSourceManager(@TempDir Path tempDir) throws Exception {
+  void reload_retargetsBuiltinToNewFirstSource(@TempDir Path tempDir) throws Exception {
     Path yaml = tempDir.resolve("tools.yaml");
     Files.writeString(yaml, yamlWithTools("tool_a"));
     Map<String, String> env = Map.of();
     MergeOptions mergeOpts = MergeOptions.fromEnv(env);
 
     handle = startFromYaml(yaml, env);
-    Set<String> before = toolNames(handle);
 
-    // New first source is not in the live SourceManager; YAML tools still use ibmi-system
-    // so validateToolSources passes, but ensureBuiltinsRegistered must reject the retarget.
     Files.writeString(yaml, """
         sources:
           other-system:
@@ -688,9 +741,15 @@ class McpServerRunnerTest {
             description: "b"
             statement: SELECT 1 FROM SYSIBM.SYSDUMMY1
         """);
-    assertFalse(McpServerRunner.reload(
+    assertTrue(McpServerRunner.reload(
         handle, yaml.toString(), env, mergeOpts, Set.of()));
-    assertEquals(before, toolNames(handle));
+    assertTrue(handle.sources().hasSource("other-system"));
+    assertEquals(
+        "other-system",
+        handle.registeredTools().get(BuiltinTools.DESCRIBE_SQL_OBJECT_NAME).source());
+    assertEquals(
+        Set.of(BuiltinTools.DESCRIBE_SQL_OBJECT_NAME, "tool_b"),
+        toolNames(handle));
     assertEquals(2, handle.registeredTools().size());
   }
 

@@ -23,6 +23,7 @@ import org.slf4j.LoggerFactory;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ibm.ibmi.mcp.config.MergeOptions;
 import com.ibm.ibmi.mcp.config.SqlToolConfig;
+import com.ibm.ibmi.mcp.config.SourceConfig;
 import com.ibm.ibmi.mcp.config.ToolsetConfig;
 import com.ibm.ibmi.mcp.config.ToolsConfig;
 import com.ibm.ibmi.mcp.config.YamlConfigLoader;
@@ -592,7 +593,17 @@ public final class McpServerRunner {
    */
   private static int ensureBuiltinsRegistered(ServerHandle handle, ToolsConfig config) {
     McpSyncServer server = handle.server();
-    for (SqlToolConfig tool : desiredBuiltinConfigs(handle, config)) {
+    List<SqlToolConfig> desired = desiredBuiltinConfigs(handle, config);
+    if (desired.isEmpty()) {
+      for (String name : BuiltinTools.activeBuiltinNames(false, false)) {
+        if (handle.registeredTools().remove(name) != null) {
+          server.removeTool(name);
+          log.info("Removed built-in tool '{}' because no sources are configured", name);
+        }
+      }
+      return handle.registeredTools().size();
+    }
+    for (SqlToolConfig tool : desired) {
       SqlToolConfig current = handle.registeredTools().get(tool.name());
       if (tool.equals(current)) {
         continue;
@@ -625,8 +636,7 @@ public final class McpServerRunner {
     String source = resolveBuiltinSource(config);
     if (!handle.sources().hasSource(source)) {
       throw new IllegalArgumentException(
-          "Built-in tools source '" + source
-              + "' is not available until restart (sources are not hot-reloaded)");
+          "Built-in tools source '" + source + "' is not registered");
     }
     List<SqlToolConfig> desired = BuiltinTools.configsForGates(
         source,
@@ -653,7 +663,10 @@ public final class McpServerRunner {
    * Watches resolved tools YAML files and hot-reloads the registry when any changes.
    *
    * <p>Under Streamable HTTP with multiple concurrent clients, reload is best-effort:
-   * in-flight requests may observe the previous or updated tool / resource set.
+   * in-flight requests may observe the previous or updated tool / resource set. Existing MCP
+   * sessions are retained. Calls already using an updated/removed source are allowed to drain
+   * up to the source shutdown grace before its pool closes; the next call uses the new lazy
+   * pool configuration.
    */
   public static void attachYamlWatcher(
       ServerHandle handle,
@@ -700,13 +713,16 @@ public final class McpServerRunner {
   }
 
   /**
-   * Re-parses the tools YAML and updates the live MCP tool and toolset-resource registries.
+   * Re-parses the tools YAML and updates live sources, then the MCP tool and toolset-resource
+   * registries.
    *
-   * <p>On parse/validation failure, logs to stderr and leaves the previous registration
-   * untouched. If tools or resources mutate and then fail, both are restored to the
-   * pre-reload snapshot. Never throws to the caller (safe to invoke from a watcher thread).
+   * <p>On parse/validation or apply failure, logs to stderr and restores the previous source
+   * configuration, tool registration, and resource URIs. Under HTTP, the MCP server and sessions
+   * are not replaced; an in-flight call may finish on the old pool or fail if the drain grace
+   * expires. Never throws to the caller (safe to invoke from a watcher thread).
    *
-   * @return {@code true} when tools or resource URIs were updated, {@code false} when skipped
+   * @return {@code true} when sources, tools, or resource URIs were updated, {@code false} when
+   *     skipped
    */
   public static boolean reload(
       ServerHandle handle,
@@ -714,7 +730,22 @@ public final class McpServerRunner {
       Map<String, String> env,
       MergeOptions mergeOpts,
       Set<String> selectedToolsets) {
+    return reloadWithHook(
+        handle, toolsPath, env, mergeOpts, selectedToolsets, () -> {});
+  }
+
+  /**
+   * Package-private test seam for forcing a failure after source apply and verifying rollback.
+   */
+  static boolean reloadWithHook(
+      ServerHandle handle,
+      String toolsPath,
+      Map<String, String> env,
+      MergeOptions mergeOpts,
+      Set<String> selectedToolsets,
+      Runnable afterSourcesApplied) {
     ToolsConfig previousConfig = handle.toolsConfig();
+    Map<String, SourceConfig> previousSources = null;
     Map<String, SqlToolConfig> previousTools = null;
     boolean toolsMutated = false;
     try {
@@ -724,21 +755,34 @@ public final class McpServerRunner {
           collidingBuiltinNames(
               config, handle.enableBuiltinTools(), handle.enableExecuteSql()));
       validateSelectedTools(selected.values());
-      validateToolSources(handle.sources(), selected);
+      validateToolSources(config.sources(), selected);
+
+      SourceManager.SourceReloadPlan sourcePlan = SourceManager.computeReloadPlan(
+          handle.sources().snapshotConfigs(), config.sources());
 
       // Gate-only set: keeps live builtins out of the YAML diff even when the reloaded
-      // config has no sources, since ensureBuiltinsRegistered would not restore them.
-      ToolReloadPlan plan = computeReloadPlan(
+      // config has no sources; ensureBuiltinsRegistered handles their removal/re-registration.
+      ToolReloadPlan toolPlan = computeReloadPlan(
           handle.registeredTools(),
           selected,
           BuiltinTools.activeBuiltinNames(
               handle.enableBuiltinTools(), handle.enableExecuteSql()));
-      boolean toolsChanged = !plan.toRemove().isEmpty() || !plan.toAdd().isEmpty();
+      boolean sourcesChanged = !sourcePlan.isEmpty();
+      boolean toolsChanged = !toolPlan.toRemove().isEmpty() || !toolPlan.toAdd().isEmpty();
 
+      previousSources = handle.sources().snapshotConfigs();
       previousTools = new HashMap<>(handle.registeredTools());
 
+      if (sourcesChanged) {
+        handle.sources().applyReloadPlan(sourcePlan);
+      }
+      afterSourcesApplied.run();
       if (toolsChanged) {
-        applyReloadPlan(handle, config, selected, plan);
+        applyReloadPlan(handle, config, selected, toolPlan);
+        toolsMutated = true;
+      }
+      if (sourcesChanged || toolsChanged) {
+        // Source add/reorder can retarget builtins even when the YAML tool diff is empty.
         toolsMutated = true;
         ensureBuiltinsRegistered(handle, config);
       }
@@ -752,20 +796,27 @@ public final class McpServerRunner {
 
       // Notify tools only after resources sync succeeds so a failed sync + rollback
       // does not leave clients acting on a tools/list_changed that was later reverted.
-      if (toolsChanged) {
+      if (sourcesChanged || toolsChanged) {
         handle.server().notifyToolsListChanged();
-        log.info("YAML reload applied: {} removed, {} added",
-            plan.toRemove().size(), plan.toAdd().size());
+        log.info(
+            "YAML reload applied: sources +{} ~{} -{}; tools -{} +{}",
+            sourcePlan.added().size(),
+            sourcePlan.updated().size(),
+            sourcePlan.removed().size(),
+            toolPlan.toRemove().size(),
+            toolPlan.toAdd().size());
       }
 
-      if (!toolsChanged && !resourcesChanged) {
-        log.debug("YAML reload: no tool or toolset-resource changes detected");
+      if (!sourcesChanged && !toolsChanged && !resourcesChanged) {
+        log.debug("YAML reload: no source, tool, or toolset-resource changes detected");
         return false;
       }
       return true;
     } catch (Exception e) {
-      restoreAfterReloadFailure(handle, previousTools, toolsMutated, previousConfig);
-      log.warn("YAML reload failed; restored previous tool and resource registration: {}",
+      restoreAfterReloadFailure(
+          handle, previousSources, previousTools, toolsMutated, previousConfig);
+      log.warn(
+          "YAML reload failed; restored previous sources, tools, and resource registration: {}",
           e.getMessage());
       log.debug("YAML reload failure", e);
       return false;
@@ -782,6 +833,27 @@ public final class McpServerRunner {
       Map<String, SqlToolConfig> previousTools,
       boolean toolsMutated,
       ToolsConfig previousConfig) {
+    restoreAfterReloadFailure(handle, null, previousTools, toolsMutated, previousConfig);
+  }
+
+  /**
+   * Restores sources, then tools, then toolset resources. Source restore runs first so tool
+   * rollback rebuilds specs against the last-good pools.
+   */
+  static void restoreAfterReloadFailure(
+      ServerHandle handle,
+      Map<String, SourceConfig> previousSources,
+      Map<String, SqlToolConfig> previousTools,
+      boolean toolsMutated,
+      ToolsConfig previousConfig) {
+    if (previousSources != null) {
+      try {
+        handle.sources().restoreConfigs(previousSources);
+      } catch (Exception sourceEx) {
+        log.warn("Source restore after failed reload also failed: {}", sourceEx.getMessage());
+        log.debug("Source restore failure", sourceEx);
+      }
+    }
     if (toolsMutated && previousTools != null) {
       try {
         rollbackTools(handle, previousTools);
@@ -890,8 +962,14 @@ public final class McpServerRunner {
   }
 
   static void validateToolSources(SourceManager sources, Map<String, SqlToolConfig> selected) {
+    validateToolSources(sources.snapshotConfigs(), selected);
+  }
+
+  static void validateToolSources(
+      Map<String, SourceConfig> sources,
+      Map<String, SqlToolConfig> selected) {
     for (SqlToolConfig tool : selected.values()) {
-      if (!sources.hasSource(tool.source())) {
+      if (!sources.containsKey(tool.source())) {
         throw new IllegalArgumentException("Unknown source: " + tool.source());
       }
     }
