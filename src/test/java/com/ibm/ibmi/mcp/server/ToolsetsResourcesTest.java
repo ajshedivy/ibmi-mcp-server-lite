@@ -30,7 +30,7 @@ import io.modelcontextprotocol.spec.McpSchema.ReadResourceResult;
 import io.modelcontextprotocol.spec.McpSchema.Resource;
 import io.modelcontextprotocol.spec.McpSchema.TextResourceContents;
 
-class ToolsetsResourcesIntegrationTest {
+class ToolsetsResourcesTest {
 
   private McpServerRunner.ServerHandle handle;
 
