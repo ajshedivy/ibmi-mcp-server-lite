@@ -653,6 +653,44 @@ class McpServerRunnerTest {
   }
 
   @Test
+  void reload_appliesJdbcOptionsOnlySourceChange(@TempDir Path tempDir) throws Exception {
+    Path yaml = tempDir.resolve("tools.yaml");
+    Files.writeString(yaml, yamlWithTools("tool_a"));
+    Map<String, String> env = Map.of();
+    MergeOptions mergeOpts = MergeOptions.fromEnv(env);
+
+    handle = startFromYaml(yaml, env);
+    Set<String> before = toolNames(handle);
+    assertTrue(handle.sources().snapshotConfigs().get("ibmi-system").jdbcOptions().isEmpty());
+
+    Files.writeString(yaml, """
+        sources:
+          ibmi-system:
+            host: localhost
+            user: user
+            password: pass
+            jdbc-options:
+              naming: system
+              libraries:
+                - MYLIB
+        tools:
+          tool_a:
+            source: ibmi-system
+            description: "tool_a"
+            statement: SELECT 1 FROM SYSIBM.SYSDUMMY1
+        """);
+
+    assertTrue(McpServerRunner.reload(
+        handle, yaml.toString(), env, mergeOpts, Set.of()));
+    Map<String, Object> jdbcOptions =
+        handle.sources().snapshotConfigs().get("ibmi-system").jdbcOptions();
+    assertEquals("system", jdbcOptions.get("naming"));
+    assertEquals(List.of("MYLIB"), jdbcOptions.get("libraries"));
+    assertEquals("localhost", handle.sources().snapshotConfigs().get("ibmi-system").host());
+    assertEquals(before, toolNames(handle));
+  }
+
+  @Test
   void reload_failureAfterSourceApplyRestoresPriorSourcesAndTools(@TempDir Path tempDir)
       throws Exception {
     Path yaml = tempDir.resolve("tools.yaml");

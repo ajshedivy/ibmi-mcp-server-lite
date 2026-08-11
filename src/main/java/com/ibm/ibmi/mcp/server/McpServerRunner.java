@@ -837,8 +837,9 @@ public final class McpServerRunner {
   }
 
   /**
-   * Restores sources, then tools, then toolset resources. Source restore runs first so tool
-   * rollback rebuilds specs against the last-good pools.
+   * Restores sources, then tools, then toolset resources. Source restore runs first so concurrent
+   * tools/call cannot open a pool against partially applied host/creds while the MCP registry
+   * rolls back, and so tool rollback rebuilds specs against the last-good pools.
    */
   static void restoreAfterReloadFailure(
       ServerHandle handle,
