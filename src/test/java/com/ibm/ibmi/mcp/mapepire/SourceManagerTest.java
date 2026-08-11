@@ -10,7 +10,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.lang.reflect.Field;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -59,6 +61,139 @@ class SourceManagerTest {
     assertEquals(5, options.getMaxSize());
     assertEquals(1, options.getStartingSize());
     assertEquals(false, options.getCreds().getRejectUnauthorized());
+  }
+
+  @Test
+  void computeReloadPlanDiffsAddedUpdatedAndRemovedSources() {
+    SourceConfig unchanged = source("unchanged", "same.example.com");
+    SourceConfig oldUpdated = source("updated", "old.example.com");
+    SourceConfig newUpdated = source("updated", "new.example.com");
+    SourceConfig removed = source("removed", "removed.example.com");
+    SourceConfig added = source("added", "added.example.com");
+
+    SourceManager.SourceReloadPlan plan = SourceManager.computeReloadPlan(
+        Map.of(
+            "unchanged", unchanged,
+            "updated", oldUpdated,
+            "removed", removed),
+        Map.of(
+            "unchanged", unchanged,
+            "updated", newUpdated,
+            "added", added));
+
+    assertEquals(Set.of("added"), plan.added());
+    assertEquals(Set.of("updated"), plan.updated());
+    assertEquals(Set.of("removed"), plan.removed());
+    assertFalse(plan.isEmpty());
+  }
+
+  @Test
+  void applyReloadPlanKeepsUnchangedPoolAndClosesPasswordUpdatedAndRemovedPools()
+      throws Exception {
+    SourceConfig oldUpdated = source("updated", "old.example.com");
+    SourceConfig newUpdated = source("updated", "new.example.com", "replacement-pass");
+    SourceConfig unchanged = source("unchanged", "same.example.com");
+    SourceConfig removed = source("removed", "removed.example.com");
+    SourceConfig added = source("added", "added.example.com");
+    Map<String, SourceConfig> initial = new LinkedHashMap<>();
+    initial.put("updated", oldUpdated);
+    initial.put("unchanged", unchanged);
+    initial.put("removed", removed);
+    SourceManager manager = new SourceManager(initial);
+
+    AtomicBoolean updatedEnded = new AtomicBoolean(false);
+    AtomicBoolean unchangedEnded = new AtomicBoolean(false);
+    AtomicBoolean removedEnded = new AtomicBoolean(false);
+    Pool updatedPool = trackingPool(oldUpdated, updatedEnded);
+    Pool unchangedPool = trackingPool(unchanged, unchangedEnded);
+    Pool removedPool = trackingPool(removed, removedEnded);
+    registerPool(manager, "updated", updatedPool);
+    registerPool(manager, "unchanged", unchangedPool);
+    registerPool(manager, "removed", removedPool);
+    manager.putHealth(
+        "removed", new SourceManager.PoolHealth(true, false, "healthy", Instant.now()));
+
+    Map<String, SourceConfig> desired = new LinkedHashMap<>();
+    desired.put("added", added);
+    desired.put("unchanged", unchanged);
+    desired.put("updated", newUpdated);
+    manager.applyReloadPlan(
+        SourceManager.computeReloadPlan(manager.snapshotConfigs(), desired),
+        Duration.ZERO);
+
+    assertTrue(updatedEnded.get());
+    assertTrue(removedEnded.get());
+    assertFalse(unchangedEnded.get());
+    assertSame(unchangedPool, poolMap(manager).get("unchanged"));
+    assertFalse(poolMap(manager).containsKey("updated"));
+    assertFalse(poolMap(manager).containsKey("removed"));
+    assertEquals(desired, manager.snapshotConfigs());
+    assertEquals(
+        java.util.List.of("added", "unchanged", "updated"),
+        java.util.List.copyOf(manager.snapshotConfigs().keySet()));
+    assertTrue(manager.hasSource("added"));
+    assertFalse(manager.hasSource("removed"));
+    assertFalse(manager.getHealthSummary().containsKey("removed"));
+
+    manager.close(Duration.ZERO);
+  }
+
+  @Test
+  void applyReloadPlanWaitsForAffectedQueriesWithoutBlockingUnchangedSources() throws Exception {
+    SourceConfig updated = source("updated", "old.example.com");
+    SourceConfig unchanged = source("unchanged", "same.example.com");
+    SourceManager manager =
+        new SourceManager(Map.of("updated", updated, "unchanged", unchanged));
+    AtomicBoolean updatedEnded = new AtomicBoolean(false);
+    registerPool(manager, "updated", trackingPool(updated, updatedEnded));
+    manager.beginQuery("updated");
+
+    SourceConfig replacement = source("updated", "new.example.com");
+    Thread reload = new Thread(() -> manager.applyReloadPlan(
+        SourceManager.computeReloadPlan(
+            manager.snapshotConfigs(),
+            Map.of("updated", replacement, "unchanged", unchanged)),
+        Duration.ofSeconds(1)));
+    reload.start();
+    Thread.sleep(50);
+
+    assertTrue(reload.isAlive(), "reload should wait for the affected in-flight query");
+    assertFalse(updatedEnded.get());
+    manager.beginQuery("unchanged");
+    manager.endQuery("unchanged");
+
+    manager.endQuery("updated");
+    reload.join(2000);
+    assertFalse(reload.isAlive());
+    assertTrue(updatedEnded.get());
+    manager.close(Duration.ZERO);
+  }
+
+  @Test
+  void restoreConfigsClosesPoolsFromReplacementConfigAndRestoresSnapshot() throws Exception {
+    SourceConfig original = source("ibmi", "old.example.com");
+    SourceConfig replacement = source("ibmi", "new.example.com");
+    SourceConfig added = source("added", "added.example.com");
+    SourceManager manager = new SourceManager(Map.of("ibmi", original));
+    Map<String, SourceConfig> snapshot = manager.snapshotConfigs();
+
+    manager.applyReloadPlan(SourceManager.computeReloadPlan(
+        snapshot, Map.of("ibmi", replacement, "added", added)), Duration.ZERO);
+
+    AtomicBoolean replacementEnded = new AtomicBoolean(false);
+    AtomicBoolean addedEnded = new AtomicBoolean(false);
+    registerPool(manager, "ibmi", trackingPool(replacement, replacementEnded));
+    registerPool(manager, "added", trackingPool(added, addedEnded));
+    manager.restoreConfigs(snapshot);
+
+    assertTrue(replacementEnded.get());
+    assertTrue(addedEnded.get());
+    assertEquals(snapshot, manager.snapshotConfigs());
+    assertTrue(manager.hasSource("ibmi"));
+    assertFalse(manager.hasSource("added"));
+    assertFalse(poolMap(manager).containsKey("ibmi"));
+    assertFalse(poolMap(manager).containsKey("added"));
+    manager.close(Duration.ZERO);
   }
 
   @Test
@@ -583,5 +718,33 @@ class SourceManagerTest {
     poolsField.setAccessible(true);
     Map<String, Pool> pools = (Map<String, Pool>) poolsField.get(manager);
     pools.put(name, pool);
+  }
+
+  private static SourceConfig source(String name, String host) {
+    return source(name, host, "pass");
+  }
+
+  private static SourceConfig source(String name, String host, String password) {
+    return new SourceConfig(
+        name,
+        host,
+        8076,
+        "user",
+        password,
+        false,
+        SourceConfig.DEFAULT_MAX_SIZE,
+        SourceConfig.DEFAULT_STARTING_SIZE,
+        SourceConfig.DEFAULT_MCP_POOL_IDLE_TIMEOUT_MS,
+        SourceConfig.DEFAULT_MCP_POOL_QUERY_TIMEOUT_MS,
+        Map.of());
+  }
+
+  private static Pool trackingPool(SourceConfig source, AtomicBoolean ended) {
+    return new Pool(SourceManager.poolOptionsFor(source)) {
+      @Override
+      public void end() {
+        ended.set(true);
+      }
+    };
   }
 }
