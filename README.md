@@ -214,17 +214,25 @@ already read — size that user's authority accordingly. Note also that the Stre
 transport has **no authentication** and `MCP_HTTP_HOST` defaults to `0.0.0.0`; bind it to
 `127.0.0.1` or put it behind an authenticating proxy.
 
-- **Hot-reload** (default on): when any resolved tools YAML file changes on disk, the server
-  re-merges and updates the live tool registry without restarting. See
-  [Hot-reloading tools YAML](#hot-reloading-tools-yaml) below.
+- **Hot-reload** (default on): when any resolved YAML file changes on disk, the server
+  re-merges and updates live sources and tools without restarting. See
+  [Hot-reloading YAML sources and tools](#hot-reloading-yaml-sources-and-tools) below.
 
-## Hot-reloading tools YAML
+## Hot-reloading YAML sources and tools
 
 When `YAML_AUTO_RELOAD` is enabled (the default), the server watches every YAML file
-resolved from `--tools` (file, directory, or glob) and live-updates the MCP tool registry
-on save — `addTool` / `removeTool` followed by `notifications/tools/list_changed` so
-connected clients re-fetch `tools/list`. Reload re-runs the same merge path as startup
-(`YAML_MERGE_*` flags apply).
+resolved from `--tools` (file, directory, or glob) and live-updates sources and the MCP
+tool registry on save. Reload re-runs the same merge path as startup (`YAML_MERGE_*`
+flags apply), then sends `notifications/tools/list_changed` so connected clients re-fetch
+`tools/list`.
+
+Source changes are applied by name:
+
+- unchanged source configuration keeps its current Mapepire pool;
+- added sources are registered lazily and connect on first use;
+- updated or removed sources wait up to the pool shutdown grace for in-flight queries,
+  then close the old pool. The next call to an updated source creates a pool with the new
+  host, credentials, sizes, timeouts, and `jdbc-options`.
 
 ```bash
 # Start the server and leave it running (logs go to stderr)
@@ -236,11 +244,11 @@ Edit a YAML file under `tools/` in your editor and save. On stderr you should se
 ```
 YAML file(s) changed: .../tools/performance/performance.yaml
 Reloaded tool 'my_new_tool' ...
-YAML reload applied: 0 removed, 1 added
+YAML reload applied: sources +0 ~0 -0; tools -0 +1
 ```
 
-**Validate YAML before relying on reload** — a bad save is logged and the previous tool
-set is kept:
+**Validate YAML before relying on reload** — a bad save is logged and the previous source
+configuration and tool set are kept:
 
 ```bash
 java -jar target/ibmi-mcp-server-lite-0.1.0.jar --tools tools --list-tools
@@ -248,9 +256,14 @@ java -jar target/ibmi-mcp-server-lite-0.1.0.jar --tools tools --list-tools
 
 **Disable hot-reload** with `--no-reload` or `YAML_AUTO_RELOAD=false` in `.env`.
 
-**Limits (by design):** DB **sources** are loaded at startup only — adding a new source in
-YAML on reload will fail validation until the server is restarted. Tools must be defined
-under the top-level `tools:` key (not nested inside another tool).
+**HTTP behavior:** reload keeps the existing Jetty server, MCP server, and client sessions.
+It is best-effort for concurrent calls: an in-flight call may finish on the old pool, or
+fail if it exceeds the drain grace and the pool closes. Subsequent calls use the new source
+configuration.
+
+**Limits (by design):** authentication token pools are not reloaded; issued tokens remain
+valid until expiry. Tools must be defined under the top-level `tools:` key (not nested
+inside another tool).
 
 **Manual testing note:** `scripts/smoke-test.py` and `sandbox/mcp-cli` spawn a **new**
 server per invocation, so they exercise startup loading but not hot-reload. To test
@@ -265,7 +278,7 @@ Desktop) that holds the stdio session open.
 | `-ts, --toolsets <a,b>` | `SELECTED_TOOLSETS` | Only register tools in these toolsets |
 | `--list-toolsets` | — | Print toolsets and exit |
 | `--list-tools` | — | Print all enabled tools and exit |
-| `--no-reload` | `YAML_AUTO_RELOAD` | Disable hot-reload of tools YAML (env default: on) |
+| `--no-reload` | `YAML_AUTO_RELOAD` | Disable YAML source/tool hot-reload (env default: on) |
 | `--builtin-tools` | `IBMI_ENABLE_DEFAULT_TOOLS` | Register built-in schema discovery tools (CLI wins; default off) |
 | `--execute-sql` | `IBMI_ENABLE_EXECUTE_SQL` | Register the built-in `execute_sql` tool (CLI wins; default off) |
 | — | `IBMI_EXECUTE_SQL_READONLY` | Read-only mode for `execute_sql` (default on: `true` or `1`) |

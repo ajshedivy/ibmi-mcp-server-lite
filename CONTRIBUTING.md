@@ -149,7 +149,8 @@ for `YAML file(s) changed` and `YAML reload applied`. A bad save logs an error a
 the previous tools intact.
 
 `sandbox/mcp-cli` spawns a fresh server per command, so use it for `tools/call` smoke
-tests — not for exercising reload. See [README — Hot-reloading tools YAML](README.md#hot-reloading-tools-yaml).
+tests — not for exercising reload. See
+[README — Hot-reloading YAML sources and tools](README.md#hot-reloading-yaml-sources-and-tools).
 
 ## Conventions
 
