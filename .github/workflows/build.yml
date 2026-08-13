@@ -25,8 +25,11 @@ jobs:
       - name: Assert shaded jar contains no JaCoCo classes
         run: |
           set -euo pipefail
-          jar tf target/ibmi-mcp-server-lite-*.jar | grep -E 'org/jacoco/|jacocoagent' \
-            && { echo "JaCoCo classes found in shaded jar"; exit 1; } || true
+          listing=$(jar tf target/ibmi-mcp-server-lite-*.jar)
+          if printf '%s\n' "$listing" | grep -E 'org/jacoco/|jacocoagent'; then
+            echo "JaCoCo classes found in shaded jar"
+            exit 1
+          fi
 
       - name: Upload fat jar
         uses: actions/upload-artifact@v4
