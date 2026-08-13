@@ -778,8 +778,8 @@ public final class McpServerRunner {
       }
       afterSourcesApplied.run();
       if (toolsChanged) {
-        applyReloadPlan(handle, config, selected, toolPlan);
         toolsMutated = true;
+        applyReloadPlan(handle, config, selected, toolPlan);
       }
       if (sourcesChanged || toolsChanged) {
         // Source add/reorder can retarget builtins even when the YAML tool diff is empty.
