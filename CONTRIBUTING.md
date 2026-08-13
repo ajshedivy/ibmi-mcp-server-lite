@@ -43,6 +43,11 @@ cd ibmi-mcp-server-lite
 ./mvnw verify -Pintegration-tests
 ```
 
+`./mvnw package` also writes a JaCoCo coverage report at
+`target/site/jacoco/index.html` (open that file in a browser). The numbers come from
+Surefire unit tests only — live Mapepire ITs (`-Pintegration-tests`) are not included.
+JaCoCo is build-time tooling; it is not bundled in the fat jar.
+
 There is no lint step. Unit tests are JUnit Jupiter via Surefire and cover the YAML loader,
 schema generation, parameter binding, and security validation; live Mapepire integration
 tests must be named `*IT.java` and run Failsafe-only under the `integration-tests`
