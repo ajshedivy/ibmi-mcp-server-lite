@@ -52,7 +52,7 @@ public final class Main {
              --list-toolsets            Print toolsets defined in the YAML file and exit
              --list-tools               Print all enabled tools defined in the YAML file and exit
              --env-file <path>          .env file for ${VAR} interpolation and env vars (default: ./.env)
-             --no-reload                Disable hot-reload of tools YAML (env: YAML_AUTO_RELOAD)
+             --no-reload                Disable YAML hot-reload (env: YAML_AUTO_RELOAD)
              --builtin-tools            Enable built-in schema discovery tools (overrides env: IBMI_ENABLE_DEFAULT_TOOLS)
              --execute-sql              Enable the execute_sql tool (overrides env: IBMI_ENABLE_EXECUTE_SQL)
              --version                  Print version and exit

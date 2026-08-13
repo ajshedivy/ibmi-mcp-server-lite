@@ -2,9 +2,12 @@ package com.ibm.ibmi.mcp.mapepire;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
@@ -62,33 +65,165 @@ public final class SourceManager implements AutoCloseable {
     }
   }
 
-  private final Map<String, SourceConfig> sources;
+  private volatile Map<String, SourceConfig> sources;
   private final Map<String, Pool> pools = new ConcurrentHashMap<>();
   private final Map<String, PoolHealth> health = new ConcurrentHashMap<>();
   /** Per-source in-flight tool queries — idle reclaim skips only busy pools. */
   private final ConcurrentHashMap<String, AtomicInteger> inFlightBySource = new ConcurrentHashMap<>();
+  private final Object queryLifecycleLock = new Object();
+  private final Object sourceReloadLock = new Object();
+  /** Source names temporarily rejecting new work while their pools are replaced. */
+  private final Set<String> drainingSources = new LinkedHashSet<>();
   private ScheduledExecutorService idleScheduler;
 
   public SourceManager(Map<String, SourceConfig> sources) {
-    this.sources = sources;
+    this.sources = immutableSourceCopy(sources);
   }
 
-  /** Called when a tool query starts on {@code sourceName}; paired with {@link #endQuery}. */
+  /**
+   * Called when a tool query starts on {@code sourceName}; paired with {@link #endQuery}.
+   * New queries wait while that source is being hot-reloaded.
+   */
   public void beginQuery(String sourceName) {
-    inFlightBySource.computeIfAbsent(sourceName, ignored -> new AtomicInteger()).incrementAndGet();
+    boolean interrupted = false;
+    synchronized (queryLifecycleLock) {
+      while (drainingSources.contains(sourceName)) {
+        try {
+          queryLifecycleLock.wait();
+        } catch (InterruptedException e) {
+          interrupted = true;
+        }
+      }
+      inFlightBySource.computeIfAbsent(sourceName, ignored -> new AtomicInteger()).incrementAndGet();
+    }
+    if (interrupted) {
+      Thread.currentThread().interrupt();
+    }
   }
 
   /** Called when a tool query finishes on {@code sourceName}; paired with {@link #beginQuery}. */
   public void endQuery(String sourceName) {
-    AtomicInteger counter = inFlightBySource.get(sourceName);
-    if (counter == null) {
-      return;
+    synchronized (queryLifecycleLock) {
+      AtomicInteger counter = inFlightBySource.get(sourceName);
+      if (counter == null) {
+        return;
+      }
+      counter.decrementAndGet();
+      queryLifecycleLock.notifyAll();
     }
-    counter.decrementAndGet();
   }
 
   public boolean hasSource(String sourceName) {
     return sources.containsKey(sourceName);
+  }
+
+  /** Immutable, insertion-ordered snapshot of the currently active source configuration. */
+  public Map<String, SourceConfig> snapshotConfigs() {
+    return sources;
+  }
+
+  /** Source changes needed to replace the current configuration with {@code desiredSources}. */
+  public record SourceReloadPlan(
+      Map<String, SourceConfig> desiredSources,
+      Set<String> added,
+      Set<String> updated,
+      Set<String> removed,
+      boolean reordered) {
+
+    public SourceReloadPlan {
+      desiredSources = immutableSourceCopy(desiredSources);
+      added = Set.copyOf(added);
+      updated = Set.copyOf(updated);
+      removed = Set.copyOf(removed);
+    }
+
+    public boolean isEmpty() {
+      return added.isEmpty() && updated.isEmpty() && removed.isEmpty() && !reordered;
+    }
+
+    Set<String> poolsToClose() {
+      Set<String> names = new LinkedHashSet<>(updated);
+      names.addAll(removed);
+      return Set.copyOf(names);
+    }
+  }
+
+  /** Diffs source names and complete {@link SourceConfig} values. */
+  public static SourceReloadPlan computeReloadPlan(
+      Map<String, SourceConfig> currentSources,
+      Map<String, SourceConfig> desiredSources) {
+    Set<String> added = new LinkedHashSet<>();
+    Set<String> updated = new LinkedHashSet<>();
+    Set<String> removed = new LinkedHashSet<>();
+
+    for (Map.Entry<String, SourceConfig> entry : desiredSources.entrySet()) {
+      SourceConfig current = currentSources.get(entry.getKey());
+      if (current == null) {
+        added.add(entry.getKey());
+      } else if (!current.equals(entry.getValue())) {
+        updated.add(entry.getKey());
+      }
+    }
+    for (String name : currentSources.keySet()) {
+      if (!desiredSources.containsKey(name)) {
+        removed.add(name);
+      }
+    }
+    boolean reordered =
+        !List.copyOf(currentSources.keySet()).equals(List.copyOf(desiredSources.keySet()));
+    return new SourceReloadPlan(desiredSources, added, updated, removed, reordered);
+  }
+
+  /**
+   * Applies source additions, updates, and removals. Updated/removed pools drain in-flight
+   * queries up to the shutdown grace, then close. Added and updated pools remain lazy.
+   */
+  public void applyReloadPlan(SourceReloadPlan plan) {
+    applyReloadPlan(plan, SHUTDOWN_GRACE);
+  }
+
+  void applyReloadPlan(SourceReloadPlan plan, Duration grace) {
+    synchronized (sourceReloadLock) {
+      applyReloadPlanLocked(plan, grace);
+    }
+  }
+
+  private void applyReloadPlanLocked(SourceReloadPlan plan, Duration grace) {
+    if (plan.isEmpty()) {
+      return;
+    }
+    Set<String> poolsToClose = plan.poolsToClose();
+    beginDraining(poolsToClose);
+    try {
+      awaitInFlight(poolsToClose, grace);
+      synchronized (this) {
+        boolean restartIdleTimer = idleScheduler != null;
+        for (String name : poolsToClose) {
+          closePool(name, "unknown");
+          health.remove(name);
+          if (plan.removed().contains(name)) {
+            inFlightBySource.remove(name);
+          }
+        }
+        sources = plan.desiredSources();
+        stopIdleTimer();
+        if (restartIdleTimer) {
+          startIdleTimer();
+        }
+      }
+    } finally {
+      endDraining(poolsToClose);
+    }
+  }
+
+  /**
+   * Restores a prior source snapshot. Pools created for added/updated configurations are
+   * closed; restored pools reconnect lazily on their next use.
+   */
+  public void restoreConfigs(Map<String, SourceConfig> previousSources) {
+    synchronized (sourceReloadLock) {
+      applyReloadPlanLocked(computeReloadPlan(sources, previousSources), SHUTDOWN_GRACE);
+    }
   }
 
   /** Returns an initialized pool for the named source, connecting on first use. */
@@ -410,6 +545,55 @@ public final class SourceManager implements AutoCloseable {
         return;
       }
     }
+  }
+
+  private void beginDraining(Set<String> sourceNames) {
+    synchronized (queryLifecycleLock) {
+      drainingSources.addAll(sourceNames);
+    }
+  }
+
+  private void endDraining(Set<String> sourceNames) {
+    synchronized (queryLifecycleLock) {
+      drainingSources.removeAll(sourceNames);
+      queryLifecycleLock.notifyAll();
+    }
+  }
+
+  private void awaitInFlight(Set<String> sourceNames, Duration grace) {
+    long deadline = System.nanoTime() + grace.toNanos();
+    synchronized (queryLifecycleLock) {
+      while (inFlightCount(sourceNames) > 0) {
+        long remainingNanos = deadline - System.nanoTime();
+        if (remainingNanos <= 0) {
+          log.warn(
+              "Source reload grace elapsed with {} in-flight queries on {}",
+              inFlightCount(sourceNames),
+              sourceNames);
+          return;
+        }
+        try {
+          TimeUnit.NANOSECONDS.timedWait(queryLifecycleLock, remainingNanos);
+        } catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
+          log.warn("Interrupted while draining sources {}", sourceNames);
+          return;
+        }
+      }
+    }
+  }
+
+  private int inFlightCount(Set<String> sourceNames) {
+    int total = 0;
+    for (String name : sourceNames) {
+      total += Math.max(0, inFlightCount(name));
+    }
+    return total;
+  }
+
+  private static Map<String, SourceConfig> immutableSourceCopy(
+      Map<String, SourceConfig> sourceConfigs) {
+    return Collections.unmodifiableMap(new LinkedHashMap<>(sourceConfigs));
   }
 }
 

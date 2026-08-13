@@ -30,7 +30,7 @@ import io.modelcontextprotocol.spec.McpSchema.ReadResourceResult;
 import io.modelcontextprotocol.spec.McpSchema.Resource;
 import io.modelcontextprotocol.spec.McpSchema.TextResourceContents;
 
-class ToolsetsResourcesIntegrationTest {
+class ToolsetsResourcesTest {
 
   private McpServerRunner.ServerHandle handle;
 
@@ -267,6 +267,39 @@ class ToolsetsResourcesIntegrationTest {
 
     assertEquals(Set.of("toolsets://", "toolsets://discovery"), resourceUris(handle));
     assertEquals(previous.toolsets().keySet(), handle.toolsetsSnapshot().keySet());
+  }
+
+  @Test
+  void reload_failureAfterSourceApplyRestoresPriorSourcesToolsAndResourceUris(
+      @TempDir Path tempDir) throws Exception {
+    Path yaml = tempDir.resolve("tools.yaml");
+    Files.writeString(yaml, yamlWithToolset("discovery", "list_libs"));
+    Map<String, String> env = Map.of();
+    MergeOptions mergeOpts = MergeOptions.fromEnv(env);
+    handle = start(yaml);
+
+    Set<String> previousTools = Set.copyOf(handle.registeredTools().keySet());
+    var previousSources = handle.sources().snapshotConfigs();
+    Set<String> previousUris = resourceUris(handle);
+
+    Files.writeString(
+        yaml,
+        yamlWithTwoToolsets().replace("host: localhost", "host: replacement.example.com"));
+
+    assertFalse(McpServerRunner.reloadWithHook(
+        handle,
+        yaml.toString(),
+        env,
+        mergeOpts,
+        Set.of(),
+        () -> {
+          throw new IllegalStateException("forced failure after source apply");
+        }));
+
+    assertEquals(previousSources, handle.sources().snapshotConfigs());
+    assertEquals(previousTools, handle.registeredTools().keySet());
+    assertEquals(previousUris, resourceUris(handle));
+    assertFalse(resourceUris(handle).contains("toolsets://performance"));
   }
 
   @Test

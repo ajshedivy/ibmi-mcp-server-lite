@@ -30,7 +30,7 @@ import com.ibm.ibmi.mcp.config.ToolsConfig;
 import com.ibm.ibmi.mcp.config.YamlConfigLoader;
 import com.ibm.ibmi.mcp.mapepire.SourceManager;
 
-class HttpTransportIntegrationTest {
+class HttpTransportTest {
 
   private static final ObjectMapper MAPPER = new ObjectMapper();
 

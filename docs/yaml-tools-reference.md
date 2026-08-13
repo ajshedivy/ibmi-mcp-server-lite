@@ -210,20 +210,31 @@ try a flattened variant (`/**/*.yaml` also matches `/*.yaml` at the walk root).
 
 When `YAML_AUTO_RELOAD` is enabled (default), the server watches every YAML file resolved
 from `--tools` (single file, directory, or glob) and re-parses the full merged config on
-change. The live MCP registry is updated via `removeTool` / `addTool` and clients receive
-`notifications/tools/list_changed`. Reload uses the same `loadAll` path and
-`YAML_MERGE_*` flags as startup.
+change. Source changes are applied before the live MCP registry is updated via
+`removeTool` / `addTool` and `toolsets://` resource sync; clients then receive
+`notifications/tools/list_changed` (and `notifications/resources/list_changed` from the
+SDK when resource URIs change). Reload uses the same `loadAll` path and `YAML_MERGE_*`
+flags as startup.
 
 | Setting | Default | Disable with |
 |---|---|---|
 | `YAML_AUTO_RELOAD` in `.env` / process env | on (`true` / `1`, or unset) | `YAML_AUTO_RELOAD=false` or `--no-reload` |
 
-On a failed reload (parse error, validation failure, unknown source), the server logs
-the error to stderr and **keeps the previous tool set**. Security validation
-(`readOnly` defaults, etc.) is re-applied on every reload, same as at startup.
+On a failed reload (parse error, validation failure, unknown source, or apply failure), the
+server logs the error to stderr and **keeps the previous sources, tool set, and
+`toolsets://` resource URIs**. Security validation (`readOnly` defaults, etc.) is
+re-applied on every reload, same as at startup.
 
-**Not reloaded:** `sources` connections are established at startup — a tool that references
-a newly added source will fail reload until the process is restarted.
+Sources are diffed by name and full configuration. Unchanged sources keep their current
+Mapepire pools. Added sources remain lazy until first use. Updated and removed sources wait
+up to the shutdown grace for in-flight queries, then close their old pools; the next call
+to an updated source creates a pool from the new host, credentials, sizes, timeouts, and
+`jdbc-options`.
+
+Streamable HTTP reload does not replace Jetty, the MCP server, or existing sessions.
+Concurrent calls are best-effort: an in-flight call may finish on the old pool or fail if
+the drain grace expires; subsequent calls use the new source configuration. Authentication
+token pools are outside this reload path, so issued tokens remain valid until expiry.
 
 ## Differences from the reference server (by design, for now)
 
