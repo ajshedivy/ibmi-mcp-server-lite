@@ -39,7 +39,7 @@ java -jar target/ibmi-mcp-server-lite-0.1.0.jar --tools tools --list-toolsets
 java -jar target/ibmi-mcp-server-lite-0.1.0.jar --tools tools --no-reload  # disable hot-reload
 ```
 
-There is no lint step. Unit tests are JUnit 5 via Surefire; live Mapepire ITs use
+There is no lint step. Unit tests are JUnit Jupiter via Surefire; live Mapepire ITs use
 Failsafe under `-Pintegration-tests` (`*IT.java`).
 
 ## Architecture
