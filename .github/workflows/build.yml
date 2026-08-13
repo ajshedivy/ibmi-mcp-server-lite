@@ -22,9 +22,26 @@ jobs:
       - name: Build and test
         run: ./mvnw -B package
 
+      - name: Assert shaded jar contains no JaCoCo classes
+        run: |
+          set -euo pipefail
+          listing=$(jar tf target/ibmi-mcp-server-lite-*.jar)
+          if printf '%s\n' "$listing" | grep -E 'org/jacoco/|jacocoagent'; then
+            echo "JaCoCo classes found in shaded jar"
+            exit 1
+          fi
+
       - name: Upload fat jar
         uses: actions/upload-artifact@v4
         with:
           name: ibmi-mcp-server-lite
           path: target/ibmi-mcp-server-lite-*.jar
+          if-no-files-found: error
+
+      - name: Upload JaCoCo coverage report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-report
+          path: target/site/jacoco/
           if-no-files-found: error
