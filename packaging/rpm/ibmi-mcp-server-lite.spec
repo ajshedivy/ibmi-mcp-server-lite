@@ -49,10 +49,10 @@ tool schema) and execute SQL against Db2 for i through the Mapepire daemon.
 %make_install INSTALL_ROOT=%{buildroot} VERSION=%{version}
 
 %post
-# Keep /QOpenSys/etc config readable and tagged with an ASCII CCSID.
+# Keep the config dir traversable and tagged ASCII. Do not chmod files:
+# %post runs on every upgrade and would reset an operator 0600.
 if [ -e %{_sysconfdir}/%{name} ]; then
     chmod 755 %{_sysconfdir}/%{name}
-    /QOpenSys/usr/bin/find %{_sysconfdir}/%{name}/ -type f -exec chmod 644 {} \;
     /QOpenSys/usr/bin/find %{_sysconfdir}/%{name}/ -type f -exec setccsid 819 {} \;
 fi
 
@@ -67,6 +67,9 @@ fi
 %config(noreplace) %{_sysconfdir}/sc/services/%{name}.yaml
 
 %changelog
+* Mon Aug 17 2026 ibmi-mcp-server-lite <xavier.stevermer@ibm.com> - 0.1.0-1
+- Stop %post from chmod 644 config files on upgrade so an operator 0600 survives.
+
 * Tue Jul 07 2026 ibmi-mcp-server-lite <xavier.stevermer@ibm.com> - 0.1.0-1
 - First working RPM: builds and runs on IBM Technology for Java 17 (5770-JV1
   option 20); Source0 points at the ibmi-mcp-server-lite repo; no openjdk-17 dep.

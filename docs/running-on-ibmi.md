@@ -140,3 +140,15 @@ provided Service Commander (`sc`) is installed (the package does not hard-requir
 The default stdio transport is still spawned per-client and needs no daemon manager. HTTP
 serves plain text (no TLS); terminate TLS at a reverse proxy or private-network boundary
 if needed.
+
+### Daemon credentials
+
+Shipped `tools.yaml` is a `${VAR}` template (`password: ${DB2i_PASS}`); mode `0644` is
+intentional. Set `DB2i_HOST` / `DB2i_USER` / `DB2i_PASS` in the Service Commander unit's
+`environment_vars` (or a `0600` file the job user can read). Do not drop a world-readable
+`.env` next to the jar: the unit already sets `MCP_SERVER_ENV=production`, which refuses
+a secret-bearing `.env` at `0644`.
+
+If you paste a literal password into `tools.yaml`, `chmod 0600` and own it as the job
+user. `%post` sets CCSID 819 and keeps the config directory traversable (`chmod 755`);
+it does not reset file modes on upgrade.

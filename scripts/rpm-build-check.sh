@@ -218,10 +218,11 @@ else
     warn "Post-install may not set CCSID on config files"
 fi
 
-if echo "$POST_SCRIPT" | grep -q "chmod"; then
-    info "Post-install sets file permissions"
+if echo "$POST_SCRIPT" | grep -E "find .*-type f -exec chmod" >/dev/null; then
+    fail "Post-install blanket-chmods config files (would reset operator 0600 on upgrade)"
+    exit 1
 else
-    warn "Post-install may not set permissions"
+    info "Post-install does not chmod config files"
 fi
 
 # Summary
