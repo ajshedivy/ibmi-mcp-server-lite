@@ -78,6 +78,14 @@ now (auth is still on the roadmap). CORS is enabled via Jetty `CrossOriginHandle
 | empty / unset | `production` | deny all |
 | empty / unset | anything else | allow any Origin (dev) |
 
+`MCP_SERVER_ENV=production` fail-closes CORS when no origin list is set. It also
+refuses to start if a secret-bearing `.env` (or tools YAML with a literal
+`sources` password) is group/world readable. Shipped packs that use
+`password: ${DB2i_PASS}` are not secret-bearing. That lock-down is for a
+long-lived daemon, not local try-out - leave `MCP_SERVER_ENV` unset while you
+are experimenting. See
+[docs/running-on-ibmi.md](docs/running-on-ibmi.md#secret-file-permissions).
+
 Example: `MCP_ALLOWED_ORIGINS=http://localhost:5173`. Use `*` alone for allow-any;
 do not mix `*` with specific origins. Native clients (curl) that omit
 `Origin` are unaffected. `GET /healthz` returns JSON pool health

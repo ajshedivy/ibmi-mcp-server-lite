@@ -37,6 +37,13 @@ sources:
 >
 > When the YAML timeout keys are omitted, `MCP_POOL_IDLE_TIMEOUT_MS` (default 300000)
 > and `MCP_POOL_QUERY_TIMEOUT_MS` (default 30000) apply. Explicit YAML values win.
+>
+> YAML with a literal `sources.*.password` (not a sole `${VAR}` placeholder) is
+> secret-bearing. Shipped packs use `password: ${DB2i_PASS}` and are not. A loaded
+> `.env` is secret-bearing if it has keys like `DB2i_PASS`. Group- or world-readable
+> secret files **warn** at load; with `MCP_SERVER_ENV=production`, startup fails.
+> Local try-out can ignore the warning. See
+> [running-on-ibmi.md](running-on-ibmi.md#secret-file-permissions).
 
 ## `tools` — parameterized SQL
 
