@@ -29,7 +29,8 @@ those YAML tools are **skipped** in favor of the Java builtins (warning on stder
 `sample_rows` and `get_table_statistics` in the same pack are unaffected.
 
 Connection fields use `${DB2i_HOST}`, `${DB2i_USER}`, `${DB2i_PASS}`, and
-`${DB2i_PORT}` (defaults to Mapepire `8076` when unset).
+`${DB2i_PORT}` (defaults to Mapepire `8076` when unset). TLS verification is on
+by default; see [docs/running-on-ibmi.md](../docs/running-on-ibmi.md#tls-certificate-verification).
 
 ## Packs
 

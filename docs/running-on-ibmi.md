@@ -85,20 +85,33 @@ cp .env.example .env   # fill DB2i_HOST / USER / PASS (and PORT if needed)
 - The sample tools YAML reads `DB2i_PORT` (falling back to 8076 when unset), so both IT
   classes honor a non-default Mapepire port.
 
-## TLS hostname verification
+## TLS certificate verification
 
-As of mapepire-sdk **0.1.3**, `ignore-unauthorized: true` relaxes both certificate-*chain*
-validation and TLS hostname (SAN) verification — matching the Node.js SDK's
-`rejectUnauthorized` / `ignoreUnauthorized` semantics. With the default
-`ignore-unauthorized: false`, hostname verification remains fully enforced.
+Shipped tool packs omit `ignore-unauthorized`, so Mapepire certificate-chain and
+hostname (SAN) verification are **on** (Java SDK `rejectUnauthorized=true`).
+`DB2i_HOST` must match a name in the Mapepire server certificate, and the JVM
+trust store must contain the issuing CA (or the server cert, if you import it
+explicitly).
 
-Practical consequences:
+Check the certificate SAN:
 
-- Self-signed or SAN-mismatched Mapepire certs work when you set
-  `ignore-unauthorized: true` (DNS aliases, loopback names not in the cert SAN, etc.).
-- Leave `ignore-unauthorized: false` (the default) when the connect host matches a name
-  in the Mapepire server certificate
-  (`openssl s_client -connect host:8076 | openssl x509 -noout -ext subjectAltName`).
+```bash
+openssl s_client -connect host:8076 </dev/null 2>/dev/null \
+  | openssl x509 -noout -ext subjectAltName
+```
+
+### Development override
+
+Self-signed or SAN-mismatched certs (DNS aliases, loopback names not in the SAN)
+need an explicit override. Either:
+
+- set `ignore-unauthorized: true` on that YAML source, or
+- omit the YAML key and set `DB2i_IGNORE_UNAUTHORIZED=true` (or `1`) in the
+  environment. YAML `true`/`false` wins when the key is present.
+
+Both skip chain **and** hostname verification (mapepire-sdk 0.1.3+, matching the
+Node `ignoreUnauthorized` flag). The server logs a warning at YAML load naming
+the source. Do not ship or deploy with the override enabled.
 
 ## RPM packaging
 
