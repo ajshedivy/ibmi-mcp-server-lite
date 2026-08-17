@@ -36,6 +36,9 @@ import org.yaml.snakeyaml.constructor.SafeConstructor;
  *   <li>Every tool's {@code source} must name an entry in {@code sources}; every toolset
  *       member must name an entry in {@code tools}; every enabled tool needs a non-empty
  *       {@code statement}.
+ *   <li>{@code ignore-unauthorized} defaults to {@code false} (verify Mapepire TLS). When
+ *       the YAML key is omitted, {@link SourceConfig#ENV_IGNORE_UNAUTHORIZED} applies.
+ *       {@code true} logs a warning: it skips certificate-chain and hostname checks.
  * </ul>
  *
  * <p>Accepts a single YAML file, a directory of {@code *.yaml}/{@code *.yml} files, or a
@@ -386,6 +389,14 @@ public final class YamlConfigLoader {
       int mcpPoolQueryTimeoutMs = resolvePoolTimeoutMs(
           src, "mcp-pool-query-timeout-ms", "MCP_POOL_QUERY_TIMEOUT_MS",
           SourceConfig.DEFAULT_MCP_POOL_QUERY_TIMEOUT_MS);
+      boolean ignoreUnauthorized = resolveIgnoreUnauthorized(src);
+      if (ignoreUnauthorized) {
+        log.warn(
+            "TLS certificate verification is disabled for source '{}'. "
+                + "ignore-unauthorized skips Mapepire certificate-chain and hostname checks. "
+                + "This is a development override; omit the key (or set false) in production.",
+            name);
+      }
       validatePoolSizes(name, maxSize, startingSize);
       result.put(name, new SourceConfig(
           name,
@@ -393,7 +404,7 @@ public final class YamlConfigLoader {
           getInt(src, "port", SourceConfig.DEFAULT_MAPEPIRE_PORT),
           requireString(src, "user", "source '" + name + "'"),
           requireString(src, "password", "source '" + name + "'"),
-          getBool(src, "ignore-unauthorized", false),
+          ignoreUnauthorized,
           maxSize,
           startingSize,
           mcpPoolIdleTimeoutMs,
@@ -593,6 +604,22 @@ public final class YamlConfigLoader {
       throw new ConfigException(owner + " is missing required field '" + key + "'");
     }
     return value;
+  }
+
+  /**
+   * YAML {@code ignore-unauthorized} if present, else {@link SourceConfig#ENV_IGNORE_UNAUTHORIZED},
+   * else {@code false} (verify TLS). YAML wins when the key is a boolean.
+   */
+  private boolean resolveIgnoreUnauthorized(Map<String, Object> src) {
+    if (src.get("ignore-unauthorized") instanceof Boolean yamlValue) {
+      return yamlValue;
+    }
+    String raw = env.get(SourceConfig.ENV_IGNORE_UNAUTHORIZED);
+    if (raw == null || raw.isBlank()) {
+      return false;
+    }
+    String trimmed = raw.trim();
+    return Boolean.parseBoolean(trimmed) || "1".equals(trimmed);
   }
 
   private static boolean getBool(Map<String, Object> map, String key, boolean dflt) {
