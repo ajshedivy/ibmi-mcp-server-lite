@@ -94,6 +94,10 @@ jobs:
             grep -qxF "$f" files.txt || { echo "MISSING: $f"; exit 1; }
           done
           grep -qi 'openjdk' requires.txt && { echo "stale openjdk dep"; exit 1; } || true
+          if rpm -qp --scripts "$RPM" | grep -E "find .*-type f -exec chmod" >/dev/null; then
+            echo "%post blanket-chmods config files"
+            exit 1
+          fi
           echo "OK: layout + Java-17 wiring correct"
 
       - name: Upload RPM + report
