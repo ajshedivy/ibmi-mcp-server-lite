@@ -1,5 +1,6 @@
 package com.ibm.ibmi.mcp.config;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -7,13 +8,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.util.List;
 import java.util.Map;
 
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -651,7 +652,11 @@ class YamlConfigLoaderTest {
       """;
 
   private static void write(Path dir, String name, String content) throws IOException {
-    Files.writeString(dir.resolve(name), content);
+    Path file = dir.resolve(name);
+    Files.writeString(file, content);
+    if (file.getFileSystem().supportedFileAttributeViews().contains("posix")) {
+      Files.setPosixFilePermissions(file, PosixFilePermissions.fromString("rw-------"));
+    }
   }
 
   @Test
@@ -1056,5 +1061,134 @@ class YamlConfigLoaderTest {
     ToolsConfig config = mergeLoader.loadAll(file.toString(), MergeOptions.fromEnv(env));
 
     assertTrue(config.tools().containsKey("query_one"));
+  }
+
+  @Test
+  void hasLiteralSourcePasswordIgnoresPlaceholders() {
+    assertFalse(YamlConfigLoader.hasLiteralSourcePassword("""
+        sources:
+          ibmi-system:
+            host: ${DB2i_HOST}
+            user: ${DB2i_USER}
+            password: ${DB2i_PASS}
+        """));
+    assertFalse(YamlConfigLoader.hasLiteralSourcePassword("""
+        sources:
+          ibmi-system:
+            password: "${DB2i_PASS}"
+        """));
+    assertFalse(YamlConfigLoader.hasLiteralSourcePassword("""
+        tools:
+          query_one:
+            source: shared
+            description: d
+            statement: SELECT 1 FROM SYSIBM.SYSDUMMY1
+        """));
+    assertTrue(YamlConfigLoader.hasLiteralSourcePassword(MINIMAL_SOURCE));
+    assertTrue(YamlConfigLoader.hasLiteralSourcePassword("""
+        sources:
+          ibmi-system:
+            password: prefix-${DB2i_PASS}
+        """));
+    assertTrue(YamlConfigLoader.hasLiteralSourcePassword("""
+        sources:
+          ibmi-system:
+            password: ${A}${B}
+        """));
+  }
+
+  @Test
+  void secretYamlAt0600Loads(@TempDir Path dir) throws Exception {
+    Path yaml = dir.resolve("tools.yaml");
+    Files.writeString(yaml, MINIMAL_SOURCE + MINIMAL_TOOL);
+    assumePosix(yaml);
+    Files.setPosixFilePermissions(yaml, PosixFilePermissions.fromString("rw-------"));
+
+    ToolsConfig config = new YamlConfigLoader(Map.of()).load(yaml);
+    assertTrue(config.sources().containsKey("shared"));
+  }
+
+  @Test
+  void secretYamlAt0644LoadsWhenNotProduction(@TempDir Path dir) throws Exception {
+    Path yaml = dir.resolve("tools.yaml");
+    Files.writeString(yaml, MINIMAL_SOURCE + MINIMAL_TOOL);
+    assumePosix(yaml);
+    Files.setPosixFilePermissions(yaml, PosixFilePermissions.fromString("rw-r--r--"));
+
+    ToolsConfig config = assertDoesNotThrow(() -> new YamlConfigLoader(Map.of()).load(yaml));
+    assertTrue(config.sources().containsKey("shared"));
+  }
+
+  @Test
+  void secretYamlAt0644FailsInProduction(@TempDir Path dir) throws Exception {
+    Path yaml = dir.resolve("tools.yaml");
+    Files.writeString(yaml, MINIMAL_SOURCE + MINIMAL_TOOL);
+    assumePosix(yaml);
+    Files.setPosixFilePermissions(yaml, PosixFilePermissions.fromString("rw-r--r--"));
+
+    YamlConfigLoader prod = new YamlConfigLoader(Map.of("MCP_SERVER_ENV", "production"));
+    ConfigException e = assertThrows(ConfigException.class, () -> prod.load(yaml));
+    assertTrue(e.getMessage().contains("group/world readable"));
+    assertTrue(e.getMessage().contains("0644"));
+  }
+
+  @Test
+  void placeholderYamlAt0644LoadsInProduction(@TempDir Path dir) throws Exception {
+    Path yaml = dir.resolve("tools.yaml");
+    Files.writeString(yaml, """
+        sources:
+          shared:
+            host: ${TEST_HOST}
+            user: ${TEST_USER}
+            password: ${TEST_PASS}
+        """ + MINIMAL_TOOL);
+    assumePosix(yaml);
+    Files.setPosixFilePermissions(yaml, PosixFilePermissions.fromString("rw-r--r--"));
+
+    Map<String, String> env = Map.of(
+        "MCP_SERVER_ENV", "production",
+        "TEST_HOST", "h",
+        "TEST_USER", "u",
+        "TEST_PASS", "p");
+    YamlConfigLoader prod = new YamlConfigLoader(env);
+    ToolsConfig config = assertDoesNotThrow(() -> prod.load(yaml));
+    assertEquals("p", config.sources().get("shared").password());
+  }
+
+  @Test
+  void toolsOnlyYamlAt0644LoadsInProduction(@TempDir Path dir) throws Exception {
+    Path yaml = dir.resolve("tools.yaml");
+    Files.writeString(yaml, MINIMAL_TOOL);
+    assumePosix(yaml);
+    Files.setPosixFilePermissions(yaml, PosixFilePermissions.fromString("rw-r--r--"));
+
+    Map<String, String> env = Map.of(
+        "MCP_SERVER_ENV", "production",
+        "YAML_VALIDATE_MERGED", "false");
+    YamlConfigLoader prod = new YamlConfigLoader(env);
+    ToolsConfig config = assertDoesNotThrow(
+        () -> prod.loadAll(yaml.toString(), MergeOptions.fromEnv(env)));
+    assertTrue(config.sources().isEmpty());
+    assertTrue(config.tools().containsKey("query_one"));
+  }
+
+  @Test
+  void secretYamlAt0644FailsInProductionViaLoadAll(@TempDir Path dir) throws Exception {
+    Path yaml = dir.resolve("tools.yaml");
+    Files.writeString(yaml, MINIMAL_SOURCE + MINIMAL_TOOL);
+    assumePosix(yaml);
+    Files.setPosixFilePermissions(yaml, PosixFilePermissions.fromString("rw-r--r--"));
+
+    Map<String, String> env = Map.of("MCP_SERVER_ENV", "production");
+    YamlConfigLoader prod = new YamlConfigLoader(env);
+    ConfigException e = assertThrows(
+        ConfigException.class, () -> prod.loadAll(yaml.toString(), MergeOptions.fromEnv(env)));
+    assertTrue(e.getMessage().contains("group/world readable"));
+  }
+
+  private static void assumePosix(Path path) {
+    Assumptions.assumeTrue(
+        path.getFileSystem().supportedFileAttributeViews().contains("posix"),
+        "POSIX file permissions required");
   }
 }
