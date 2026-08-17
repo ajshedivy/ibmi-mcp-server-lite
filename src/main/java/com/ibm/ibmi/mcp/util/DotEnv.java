@@ -6,6 +6,9 @@ import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
  * Minimal {@code .env} file reader (KEY=VALUE lines, {@code #} comments, optional quotes).
  * Real process environment variables always win over file entries, matching dotenv's
@@ -13,16 +16,42 @@ import java.util.Map;
  */
 public final class DotEnv {
 
+  private static final Logger log = LoggerFactory.getLogger(DotEnv.class);
+
   private DotEnv() {}
 
   /** Environment for ${VAR} interpolation: .env file entries overlaid by process env. */
   public static Map<String, String> environment(Path envFile) {
     Map<String, String> env = new LinkedHashMap<>();
+    Map<String, String> fileEntries = Map.of();
     if (envFile != null && Files.isRegularFile(envFile)) {
-      env.putAll(parse(envFile));
+      fileEntries = parse(envFile);
+      env.putAll(fileEntries);
     }
     env.putAll(System.getenv());
+    checkSecretFilePermissions(envFile, fileEntries, env);
     return env;
+  }
+
+  /**
+   * Warn, or fail in production, when a loaded {@code .env} that holds secret keys is
+   * group/world readable. Non-POSIX file systems skip the check.
+   */
+  private static void checkSecretFilePermissions(
+      Path envFile, Map<String, String> fileEntries, Map<String, String> mergedEnv) {
+    if (envFile == null || fileEntries.isEmpty()) {
+      return;
+    }
+    boolean secretBearing = fileEntries.keySet().stream().anyMatch(SecretFilePermissions::isSecretEnvKey);
+    if (!secretBearing) {
+      return;
+    }
+    SecretFilePermissions.groupOrWorldReadableWarning(envFile).ifPresent(message -> {
+      if (SecretFilePermissions.isProduction(mergedEnv)) {
+        throw new IllegalStateException(message);
+      }
+      log.warn("{}", message);
+    });
   }
 
   static Map<String, String> parse(Path envFile) {

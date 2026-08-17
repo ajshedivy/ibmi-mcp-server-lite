@@ -109,7 +109,13 @@ public final class Main {
       }
     }
 
-    Map<String, String> env = DotEnv.environment(Path.of(envFile));
+    Map<String, String> env;
+    try {
+      env = DotEnv.environment(Path.of(envFile));
+    } catch (IllegalStateException e) {
+      fail(e.getMessage());
+      return;
+    }
 
     transport = resolveConfigValue(transport, env, "MCP_TRANSPORT_TYPE", "stdio");
     transport = transport.toLowerCase(Locale.ROOT);
