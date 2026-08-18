@@ -11,7 +11,7 @@ import java.util.Set;
 public record TransportConfig(
     String httpHost, int httpPort, String httpEndpoint, Set<String> corsOriginPatterns) {
 
-  public static final String DEFAULT_HOST = "0.0.0.0";
+  public static final String DEFAULT_HOST = "127.0.0.1";
   public static final int DEFAULT_PORT = 3010;
   public static final String DEFAULT_ENDPOINT = "/mcp";
 

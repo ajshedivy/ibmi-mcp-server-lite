@@ -56,13 +56,13 @@ java -jar target/ibmi-mcp-server-lite-0.1.0.jar \
   --transport http
 ```
 
-Defaults: bind `0.0.0.0:3010`, MCP endpoint `/mcp`. Override via flags or environment:
+Defaults: bind `127.0.0.1:3010`, MCP endpoint `/mcp`. Override via flags or environment:
 
 | Flag | Environment variable | Default |
 |------|---------------------|---------|
 | `--transport http` | `MCP_TRANSPORT_TYPE` | `stdio` |
 | `--http-port` | `MCP_HTTP_PORT` | `3010` |
-| `--http-host` | `MCP_HTTP_HOST` | `0.0.0.0` |
+| `--http-host` | `MCP_HTTP_HOST` | `127.0.0.1` |
 | `--http-endpoint` | `MCP_HTTP_ENDPOINT_PATH` | `/mcp` |
 | (env only) | `MCP_ALLOWED_ORIGINS` | empty (see CORS below) |
 | (env only) | `MCP_SERVER_ENV` | empty (non-production) |
@@ -211,8 +211,9 @@ of any supported object type, including `MASK` and `PERMISSION` (row and column 
 control rules) and `PROCEDURE`/`FUNCTION` bodies. Db2 still enforces object authority
 against the configured `DB2i_USER`, so nothing is reachable that this user could not
 already read — size that user's authority accordingly. Note also that the Streamable HTTP
-transport has **no authentication** and `MCP_HTTP_HOST` defaults to `0.0.0.0`; bind it to
-`127.0.0.1` or put it behind an authenticating proxy.
+transport has **no authentication**; `MCP_HTTP_HOST` defaults to `127.0.0.1` (localhost
+only). To expose it on the network, set `MCP_HTTP_HOST=0.0.0.0` and put it behind an
+authenticating proxy.
 
 - **Hot-reload** (default on): when any resolved YAML file changes on disk, the server
   re-merges and updates live sources, tools, and `toolsets://` resources without restarting.
