@@ -135,8 +135,15 @@ The build partition must have:
 
 A Service Commander unit (`packaging/ibmi/service-commander-def.yaml`) is shipped and
 now functional: it launches the server with `--transport http` (implemented via embedded
-Jetty), so `sc start ibmi-mcp-server-lite` runs it as a long-lived daemon on port 3010 —
-provided Service Commander (`sc`) is installed (the package does not hard-require it).
+Jetty), so `sc start ibmi-mcp-server-lite` runs it as a long-lived daemon on
+`127.0.0.1:3010` — provided Service Commander (`sc`) is installed (the package does not
+hard-require it). HTTP has no authentication and already defaults to
+`MCP_HTTP_HOST=127.0.0.1`. Reach it from a workstation with an SSH tunnel
+(`ssh -L 3010:127.0.0.1:3010 user@ibmi`) or an authenticating reverse proxy. To listen
+on all interfaces, set `MCP_HTTP_HOST=0.0.0.0` in the unit's `environment_vars` (the
+file is `%config(noreplace)`, so upgrades keep that edit). CORS is not authentication —
+`MCP_SERVER_ENV=production` only fail-closes browser Origins.
+
 The default stdio transport is still spawned per-client and needs no daemon manager. HTTP
 serves plain text (no TLS); terminate TLS at a reverse proxy or private-network boundary
 if needed.

@@ -1,9 +1,13 @@
 # Service Commander (sc) unit definition, installed to
 # /QOpenSys/etc/sc/services/ibmi-mcp-server-lite.yaml by the RPM.
 #
-# sc manages long-running daemons. Use --transport http for daemon mode;
-# MCP_SERVER_ENV=production to deny all origins;
-# check_alive probes the default HTTP port (3010).
+# sc manages long-running daemons. Use --transport http for daemon mode.
+# HTTP has no auth and defaults to localhost (MCP_HTTP_HOST=127.0.0.1).
+# Remote clients should SSH-tunnel (ssh -L 3010:127.0.0.1:3010 user@ibmi)
+# or sit behind a proxy. To listen on all interfaces, add
+# MCP_HTTP_HOST=0.0.0.0 to environment_vars (%config(noreplace); upgrades
+# keep the edit). MCP_SERVER_ENV=production fail-closes browser CORS
+# (not TCP auth). check_alive probes the default HTTP port (3010).
 name: IBM i MCP Server Lite
 dir: .
 start_cmd: /QOpenSys/pkgs/bin/ibmi-mcp-server-lite --transport http --no-reload
