@@ -152,14 +152,14 @@ class MainTest {
     Files.writeString(envFile, """
         MCP_TRANSPORT_TYPE=http
         MCP_HTTP_PORT=9090
-        MCP_HTTP_HOST=127.0.0.1
+        MCP_HTTP_HOST=192.168.99.1
         MCP_HTTP_ENDPOINT_PATH=/api/mcp
         """);
     Map<String, String> env = com.ibm.ibmi.mcp.util.DotEnv.environment(envFile);
 
     assertEquals("http", Main.resolveConfigValue(null, env, "MCP_TRANSPORT_TYPE", "stdio"));
     assertEquals("9090", Main.resolveConfigValue(null, env, "MCP_HTTP_PORT", "3010"));
-    assertEquals("127.0.0.1", Main.resolveConfigValue(null, env, "MCP_HTTP_HOST", "127.0.0.1"));
+    assertEquals("192.168.99.1", Main.resolveConfigValue(null, env, "MCP_HTTP_HOST", "127.0.0.1"));
     assertEquals("/api/mcp", Main.resolveConfigValue(null, env, "MCP_HTTP_ENDPOINT_PATH", "/mcp"));
   }
 
