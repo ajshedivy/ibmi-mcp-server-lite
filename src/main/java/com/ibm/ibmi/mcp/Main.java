@@ -58,7 +58,7 @@ public final class Main {
              --version                  Print version and exit
              --transport <stdio|http>   Transport (default: stdio; env: MCP_TRANSPORT_TYPE)
              --http-port <port>         HTTP port (default: 3010; env: MCP_HTTP_PORT)
-             --http-host <host>         HTTP bind host (default: 0.0.0.0; env: MCP_HTTP_HOST)
+             --http-host <host>         HTTP bind host (default: 127.0.0.1; env: MCP_HTTP_HOST)
              --http-endpoint <path>     HTTP MCP endpoint (default: /mcp; env: MCP_HTTP_ENDPOINT_PATH)
         -h,  --help                     Show this help
       """;

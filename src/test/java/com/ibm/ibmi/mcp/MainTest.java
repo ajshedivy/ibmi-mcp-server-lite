@@ -159,7 +159,7 @@ class MainTest {
 
     assertEquals("http", Main.resolveConfigValue(null, env, "MCP_TRANSPORT_TYPE", "stdio"));
     assertEquals("9090", Main.resolveConfigValue(null, env, "MCP_HTTP_PORT", "3010"));
-    assertEquals("127.0.0.1", Main.resolveConfigValue(null, env, "MCP_HTTP_HOST", "0.0.0.0"));
+    assertEquals("127.0.0.1", Main.resolveConfigValue(null, env, "MCP_HTTP_HOST", "127.0.0.1"));
     assertEquals("/api/mcp", Main.resolveConfigValue(null, env, "MCP_HTTP_ENDPOINT_PATH", "/mcp"));
   }
 
