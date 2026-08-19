@@ -306,12 +306,11 @@ public final class YamlConfigLoader {
     if (!hasLiteralSourcePassword(rawText)) {
       return;
     }
-    SecretFilePermissions.groupOrWorldReadableWarning(yamlFile).ifPresent(message -> {
-      if (SecretFilePermissions.isProduction(env)) {
-        throw new ConfigException(message);
-      }
-      log.warn("{}", message);
-    });
+    try {
+      SecretFilePermissions.enforceOwnerOnly(yamlFile, env, log);
+    } catch (IllegalStateException e) {
+      throw new ConfigException(e.getMessage(), e);
+    }
   }
 
   /**

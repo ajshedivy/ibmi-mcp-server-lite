@@ -2,7 +2,6 @@ package com.ibm.ibmi.mcp.it;
 
 import java.nio.file.Path;
 import java.util.Map;
-import java.util.function.Supplier;
 
 import org.junit.jupiter.api.Assumptions;
 import org.slf4j.Logger;
@@ -35,13 +34,9 @@ final class MapepireEnv {
    * are absent. Call at the start of every {@code *IT} test method.
    */
   static void assumeAvailable() {
-    assumeAvailable(MapepireEnv::environment);
-  }
-
-  static void assumeAvailable(Supplier<Map<String, String>> environmentSupplier) {
     Map<String, String> env;
     try {
-      env = environmentSupplier.get();
+      env = environment();
     } catch (IllegalStateException e) {
       log.warn("Skipping Mapepire IT: environment unavailable: {}", e.getMessage());
       Assumptions.assumeTrue(false, "Mapepire environment unavailable: " + e.getMessage());

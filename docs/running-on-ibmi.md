@@ -102,31 +102,17 @@ Practical consequences:
 
 ## Secret file permissions
 
-Trying the server locally does not require special file modes. `cp .env.example .env`,
-fill in `DB2i_*`, and run. If a secret-bearing `.env` is group/world readable, you
-get a **warning** on stderr and the process still starts. Shipped tools YAML that
-uses `password: ${DB2i_PASS}` is not secret-bearing and may stay world-readable.
+Local try-out needs no special file modes. A group/world-readable secret-bearing
+`.env` (`DB2i_PASS` / `DB2i_PASSWORD`) or YAML with a literal `sources` password
+**warns** and still starts. Shipped packs using `password: ${DB2i_PASS}` are not
+secret-bearing.
 
-`MCP_SERVER_ENV=production` (the shipped Service Commander unit sets this) is the
-stricter path: a secret-bearing `.env`, or YAML with a literal `sources` password,
-must be owner-only (`chmod 0600`) or startup fails. That is for a long-lived
-daemon, not the quickstart. Leave `MCP_SERVER_ENV` unset until you want a
-production environment.
-
-On POSIX:
-
-- Group- or world-readable (`0644`, `0640`, and similar): warning with path and mode.
-- Same, plus `MCP_SERVER_ENV=production`: startup fails (`error:` on stderr, exit 2).
-- Owner-only (`chmod 0600`): no warning.
-- Non-POSIX file systems: check skipped.
-
-Secret-bearing means a loaded `.env` with keys like `DB2i_PASS`, or a YAML file
-whose `sources.*.password` is a literal value on disk. `password: ${DB2i_PASS}`
-and YAML that only defines `tools` / `toolsets` are not checked.
+`MCP_SERVER_ENV=production` (the shipped Service Commander unit sets this) requires
+owner-only files (`chmod 600`) or startup fails. Leave `MCP_SERVER_ENV` unset until
+you deploy a long-lived daemon. Non-POSIX file systems skip the check.
 
 ```bash
-# Optional local hardening (required only when MCP_SERVER_ENV=production)
-chmod 0600 .env
+chmod 600 .env   # required only with MCP_SERVER_ENV=production
 ```
 
 ## RPM packaging

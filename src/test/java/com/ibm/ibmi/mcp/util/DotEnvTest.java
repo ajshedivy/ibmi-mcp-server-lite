@@ -52,7 +52,6 @@ class DotEnvTest {
 
     IllegalStateException e = assertThrows(IllegalStateException.class, () -> DotEnv.environment(envFile));
     assertTrue(e.getMessage().contains("group/world readable"));
-    assertTrue(e.getMessage().contains("0644"));
   }
 
   @Test

@@ -67,9 +67,7 @@ cp .env.example .env
 ```
 
 `.env` is gitignored - never commit credentials. Only `.env.example` (placeholder values)
-is tracked. A group/world-readable `.env` only **warns** while you are using the
-server locally. Securing the credential files with `chmod 0600 .env` matters when you set `MCP_SERVER_ENV=production`
-(Service Commander can do that for you). See
+is tracked. Secret-file permission rules apply when `MCP_SERVER_ENV=production`; see
 [docs/running-on-ibmi.md](docs/running-on-ibmi.md#secret-file-permissions).
 
 > **TLS note:** with mapepire-sdk 0.1.3+, `ignore-unauthorized: true` relaxes both

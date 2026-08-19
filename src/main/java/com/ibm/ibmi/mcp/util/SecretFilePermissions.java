@@ -1,7 +1,6 @@
 package com.ibm.ibmi.mcp.util;
 
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermission;
@@ -11,10 +10,13 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
+import org.slf4j.Logger;
+
 /**
- * POSIX permission checks for secret-bearing config files ({@code .env} with password
- * keys, tools YAML with a literal {@code sources.*.password}). {@code password: ${VAR}}
- * templates are not secret-bearing. Non-POSIX file systems skip the check.
+ * POSIX permission checks for secret-bearing config files ({@code .env} with IBM i
+ * credential keys, tools YAML with a literal {@code sources.*.password}).
+ * {@code password: ${VAR}} templates are not secret-bearing. Non-POSIX file systems
+ * skip the check.
  */
 public final class SecretFilePermissions {
 
@@ -47,31 +49,33 @@ public final class SecretFilePermissions {
         && trimmed.indexOf('}') == trimmed.length() - 1;
   }
 
-  /**
-   * Whether a {@code .env} key looks like a secret (password / pass / secret / token).
-   * {@code DB2i_PASS} matches via the {@code _PASS} suffix. {@code BYPASS} and
-   * {@code API_KEY} do not.
-   */
+  /** Whether a {@code .env} key holds an IBM i credential loaded from disk. */
   public static boolean isSecretEnvKey(String key) {
     if (key == null || key.isBlank()) {
       return false;
     }
     String upper = key.toUpperCase(Locale.ROOT);
-    return upper.equals("PASS")
-        || upper.equals("PASSWORD")
-        || upper.equals("SECRET")
-        || upper.equals("TOKEN")
-        || upper.endsWith("_PASS")
-        || upper.endsWith("_PASSWORD")
-        || upper.endsWith("_SECRET")
-        || upper.endsWith("_TOKEN");
+    return upper.equals("DB2I_PASS") || upper.equals("DB2I_PASSWORD");
+  }
+
+  /**
+   * Warn, or fail in production, when {@code file} is group- or world-readable.
+   * No-op on non-POSIX file systems, missing files, or owner-only reads.
+   */
+  public static void enforceOwnerOnly(Path file, Map<String, String> env, Logger log) {
+    groupOrWorldReadableWarning(file).ifPresent(message -> {
+      if (isProduction(env)) {
+        throw new IllegalStateException(message);
+      }
+      log.warn("{}", message);
+    });
   }
 
   /**
    * Warning text when {@code file} is group- or world-readable. Empty on non-POSIX
    * file systems, missing files, or owner-only reads.
    */
-  public static Optional<String> groupOrWorldReadableWarning(Path file) {
+  static Optional<String> groupOrWorldReadableWarning(Path file) {
     if (file == null || !Files.isRegularFile(file)) {
       return Optional.empty();
     }
@@ -81,49 +85,16 @@ public final class SecretFilePermissions {
     } catch (UnsupportedOperationException e) {
       return Optional.empty();
     } catch (IOException e) {
-      throw new UncheckedIOException("Cannot read permissions for " + file, e);
+      throw new IllegalStateException("Cannot read permissions for " + file, e);
     }
     if (!perms.contains(PosixFilePermission.GROUP_READ)
         && !perms.contains(PosixFilePermission.OTHERS_READ)) {
       return Optional.empty();
     }
     String symbolic = PosixFilePermissions.toString(perms);
-    String octal = String.format("%04o", toOctal(perms));
     return Optional.of(
         "Secret-bearing config file '" + file.toAbsolutePath()
-            + "' is group/world readable (" + symbolic + " / " + octal
-            + "). Restrict to owner-only (0600).");
-  }
-
-  static int toOctal(Set<PosixFilePermission> perms) {
-    int mode = 0;
-    if (perms.contains(PosixFilePermission.OWNER_READ)) {
-      mode |= 0400;
-    }
-    if (perms.contains(PosixFilePermission.OWNER_WRITE)) {
-      mode |= 0200;
-    }
-    if (perms.contains(PosixFilePermission.OWNER_EXECUTE)) {
-      mode |= 0100;
-    }
-    if (perms.contains(PosixFilePermission.GROUP_READ)) {
-      mode |= 040;
-    }
-    if (perms.contains(PosixFilePermission.GROUP_WRITE)) {
-      mode |= 020;
-    }
-    if (perms.contains(PosixFilePermission.GROUP_EXECUTE)) {
-      mode |= 010;
-    }
-    if (perms.contains(PosixFilePermission.OTHERS_READ)) {
-      mode |= 04;
-    }
-    if (perms.contains(PosixFilePermission.OTHERS_WRITE)) {
-      mode |= 02;
-    }
-    if (perms.contains(PosixFilePermission.OTHERS_EXECUTE)) {
-      mode |= 01;
-    }
-    return mode;
+            + "' is group/world readable (" + symbolic
+            + "). Restrict to owner-only (chmod 600).");
   }
 }

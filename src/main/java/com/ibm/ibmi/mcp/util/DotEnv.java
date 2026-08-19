@@ -29,29 +29,12 @@ public final class DotEnv {
       env.putAll(fileEntries);
     }
     env.putAll(System.getenv());
-    checkSecretFilePermissions(envFile, fileEntries, env);
+    if (envFile != null
+        && !fileEntries.isEmpty()
+        && fileEntries.keySet().stream().anyMatch(SecretFilePermissions::isSecretEnvKey)) {
+      SecretFilePermissions.enforceOwnerOnly(envFile, env, log);
+    }
     return env;
-  }
-
-  /**
-   * Warn, or fail in production, when a loaded {@code .env} that holds secret keys is
-   * group/world readable. Non-POSIX file systems skip the check.
-   */
-  private static void checkSecretFilePermissions(
-      Path envFile, Map<String, String> fileEntries, Map<String, String> mergedEnv) {
-    if (envFile == null || fileEntries.isEmpty()) {
-      return;
-    }
-    boolean secretBearing = fileEntries.keySet().stream().anyMatch(SecretFilePermissions::isSecretEnvKey);
-    if (!secretBearing) {
-      return;
-    }
-    SecretFilePermissions.groupOrWorldReadableWarning(envFile).ifPresent(message -> {
-      if (SecretFilePermissions.isProduction(mergedEnv)) {
-        throw new IllegalStateException(message);
-      }
-      log.warn("{}", message);
-    });
   }
 
   static Map<String, String> parse(Path envFile) {
