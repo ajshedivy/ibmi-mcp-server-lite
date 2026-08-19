@@ -66,8 +66,9 @@ cp .env.example .env
 # then edit DB2i_HOST / DB2i_USER / DB2i_PASS
 ```
 
-`.env` is gitignored — never commit credentials. Only `.env.example` (placeholder values)
-is tracked.
+`.env` is gitignored - never commit credentials. Only `.env.example` (placeholder values)
+is tracked. Secret-file permission rules apply when `MCP_SERVER_ENV=production`; see
+[docs/running-on-ibmi.md](docs/running-on-ibmi.md#secret-file-permissions).
 
 > **TLS note:** with mapepire-sdk 0.1.3+, `ignore-unauthorized: true` relaxes both
 > certificate-chain trust and TLS hostname (SAN) verification. Leave it `false` (the

@@ -9,6 +9,7 @@ import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
@@ -58,18 +59,15 @@ class MainTest {
 
   @Test
   void testMainListToolsFeatureWithoutCodeChanges(@TempDir Path tempDir) throws Exception {
-    // Write the test fixture string to a real temporary file location
-    // This ensures that the main method is able to read from a real file
-    Path tempYamlFile = tempDir.resolve("tools-test-fixture.yaml");
-    Files.writeString(tempYamlFile, TEST_YAML_FIXTURE);
+    Path tempYamlFile = writeOwnerOnly(tempDir.resolve("tools-test-fixture.yaml"), TEST_YAML_FIXTURE);
+    Path envFile = writeOwnerOnly(tempDir.resolve(".env"), "");
 
-    // Prepare arguments mimicking command-line entry
     String[] args = new String[] {
         "--tools", tempYamlFile.toAbsolutePath().toString(),
+        "--env-file", envFile.toAbsolutePath().toString(),
         "--list-tools"
     };
 
-    // Execute the public main method directly
     Main.main(args);
 
     // Capture console printout and match requirements from instructions
@@ -87,16 +85,14 @@ class MainTest {
 
   @Test
   void testMainListToolsetsFromDirectory(@TempDir Path tempDir) throws Exception {
-    Path sources = tempDir.resolve("sources.yaml");
-    Files.writeString(sources, """
+    writeOwnerOnly(tempDir.resolve("sources.yaml"), """
         sources:
           ibmi-system:
             host: localhost
             user: dummy
             password: dummy
         """);
-    Path tools = tempDir.resolve("tools.yaml");
-    Files.writeString(tools, """
+    writeOwnerOnly(tempDir.resolve("tools.yaml"), """
         tools:
           active_jobs:
             source: ibmi-system
@@ -107,8 +103,13 @@ class MainTest {
             title: "Performance"
             tools: [active_jobs]
         """);
+    Path envFile = writeOwnerOnly(tempDir.resolve(".env"), "");
 
-    Main.main(new String[] {"--tools", tempDir.toString(), "--list-toolsets"});
+    Main.main(new String[] {
+        "--tools", tempDir.toString(),
+        "--env-file", envFile.toAbsolutePath().toString(),
+        "--list-toolsets"
+    });
 
     String output = outputStreamCaptor.toString();
     assertTrue(output.contains("performance"), "Console output should list merged toolset");
@@ -140,16 +141,14 @@ class MainTest {
 
   @Test
   void resolveYamlAutoReload_readsFromDotEnvFile(@TempDir Path tempDir) throws Exception {
-    Path envFile = tempDir.resolve(".env");
-    Files.writeString(envFile, "YAML_AUTO_RELOAD=false\n");
+    Path envFile = writeOwnerOnly(tempDir.resolve(".env"), "YAML_AUTO_RELOAD=false\n");
     Map<String, String> env = com.ibm.ibmi.mcp.util.DotEnv.environment(envFile);
     assertFalse(Main.resolveYamlAutoReload(env, false));
   }
 
   @Test
   void resolveConfigValue_readsTransportFromDotEnvFile(@TempDir Path tempDir) throws Exception {
-    Path envFile = tempDir.resolve(".env");
-    Files.writeString(envFile, """
+    Path envFile = writeOwnerOnly(tempDir.resolve(".env"), """
         MCP_TRANSPORT_TYPE=http
         MCP_HTTP_PORT=9090
         MCP_HTTP_HOST=192.168.99.1
@@ -165,8 +164,7 @@ class MainTest {
 
   @Test
   void resolveConfigValue_cliOverridesDotEnvFile(@TempDir Path tempDir) throws Exception {
-    Path envFile = tempDir.resolve(".env");
-    Files.writeString(envFile, "MCP_TRANSPORT_TYPE=http\n");
+    Path envFile = writeOwnerOnly(tempDir.resolve(".env"), "MCP_TRANSPORT_TYPE=http\n");
     Map<String, String> env = com.ibm.ibmi.mcp.util.DotEnv.environment(envFile);
 
     assertEquals("stdio", Main.resolveConfigValue("stdio", env, "MCP_TRANSPORT_TYPE", "stdio"));
@@ -174,8 +172,7 @@ class MainTest {
 
   @Test
   void resolveConfigValue_processEnvWinsOverDotEnvFile(@TempDir Path tempDir) throws Exception {
-    Path envFile = tempDir.resolve(".env");
-    Files.writeString(envFile, "MCP_TRANSPORT_TYPE=http\n");
+    Path envFile = writeOwnerOnly(tempDir.resolve(".env"), "MCP_TRANSPORT_TYPE=http\n");
 
     String java = Path.of(System.getProperty("java.home"), "bin", "java").toString();
     ProcessBuilder pb = new ProcessBuilder(
@@ -193,10 +190,8 @@ class MainTest {
 
   @Test
   void stdioIgnoresInvalidHttpPortInDotEnv(@TempDir Path tempDir) throws Exception {
-    Path tempYamlFile = tempDir.resolve("tools-test-fixture.yaml");
-    Files.writeString(tempYamlFile, TEST_YAML_FIXTURE);
-    Path envFile = tempDir.resolve(".env");
-    Files.writeString(envFile, "MCP_HTTP_PORT=not-a-port\n");
+    Path tempYamlFile = writeOwnerOnly(tempDir.resolve("tools-test-fixture.yaml"), TEST_YAML_FIXTURE);
+    Path envFile = writeOwnerOnly(tempDir.resolve(".env"), "MCP_HTTP_PORT=not-a-port\n");
 
     Main.main(new String[] {
         "--tools", tempYamlFile.toAbsolutePath().toString(),
@@ -243,8 +238,7 @@ class MainTest {
 
   @Test
   void resolveBuiltinTools_readsFromDotEnvFile(@TempDir Path tempDir) throws Exception {
-    Path envFile = tempDir.resolve(".env");
-    Files.writeString(envFile, "IBMI_ENABLE_DEFAULT_TOOLS=true\n");
+    Path envFile = writeOwnerOnly(tempDir.resolve(".env"), "IBMI_ENABLE_DEFAULT_TOOLS=true\n");
     Map<String, String> env = com.ibm.ibmi.mcp.util.DotEnv.environment(envFile);
     assertTrue(Main.resolveBuiltinTools(env, false));
   }
@@ -292,9 +286,16 @@ class MainTest {
 
   @Test
   void resolveExecuteSql_readsFromDotEnvFile(@TempDir Path tempDir) throws Exception {
-    Path envFile = tempDir.resolve(".env");
-    Files.writeString(envFile, "IBMI_ENABLE_EXECUTE_SQL=true\n");
+    Path envFile = writeOwnerOnly(tempDir.resolve(".env"), "IBMI_ENABLE_EXECUTE_SQL=true\n");
     Map<String, String> env = com.ibm.ibmi.mcp.util.DotEnv.environment(envFile);
     assertTrue(Main.resolveExecuteSql(env, false));
+  }
+
+  private static Path writeOwnerOnly(Path file, String content) throws Exception {
+    Files.writeString(file, content);
+    if (file.getFileSystem().supportedFileAttributeViews().contains("posix")) {
+      Files.setPosixFilePermissions(file, PosixFilePermissions.fromString("rw-------"));
+    }
+    return file;
   }
 }

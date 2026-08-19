@@ -34,7 +34,14 @@ final class MapepireEnv {
    * are absent. Call at the start of every {@code *IT} test method.
    */
   static void assumeAvailable() {
-    Map<String, String> env = environment();
+    Map<String, String> env;
+    try {
+      env = environment();
+    } catch (IllegalStateException e) {
+      log.warn("Skipping Mapepire IT: environment unavailable: {}", e.getMessage());
+      Assumptions.assumeTrue(false, "Mapepire environment unavailable: " + e.getMessage());
+      return;
+    }
     String host = trimToNull(env.get("DB2i_HOST"));
     String user = trimToNull(env.get("DB2i_USER"));
     String pass = trimToNull(env.get("DB2i_PASS"));

@@ -100,6 +100,22 @@ Practical consequences:
   in the Mapepire server certificate
   (`openssl s_client -connect host:8076 | openssl x509 -noout -ext subjectAltName`).
 
+## Secret file permissions
+
+Local try-out needs no special file modes. Any populated `.env`, or YAML with a
+literal `sources` password, **warns** and still starts when it grants group/world
+permissions.
+Shipped packs using `password: ${DB2i_PASS}` are not secret-bearing.
+
+`MCP_SERVER_ENV=production` (the shipped Service Commander unit sets this) requires
+every populated `.env` and secret-bearing YAML to be owner-only (`chmod 600`) or
+startup fails. Leave `MCP_SERVER_ENV` unset until you deploy a long-lived daemon.
+Non-POSIX file systems skip the check.
+
+```bash
+chmod 600 .env   # required only with MCP_SERVER_ENV=production
+```
+
 ## RPM packaging
 
 `.github/workflows/rpm-ibmi.yml` runs the public IBM i RPM pipeline used by

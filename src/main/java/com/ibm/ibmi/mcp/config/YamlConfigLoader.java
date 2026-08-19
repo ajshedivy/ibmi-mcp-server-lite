@@ -18,6 +18,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+import com.ibm.ibmi.mcp.util.SecretFilePermissions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.yaml.snakeyaml.LoaderOptions;
@@ -36,6 +37,10 @@ import org.yaml.snakeyaml.constructor.SafeConstructor;
  *   <li>Every tool's {@code source} must name an entry in {@code sources}; every toolset
  *       member must name an entry in {@code tools}; every enabled tool needs a non-empty
  *       {@code statement}.
+ *   <li>YAML files with a literal {@code sources.*.password} (not a sole
+ *       {@code ${VAR}} placeholder) are secret-bearing. If the file grants group/world
+ *       permissions, a warning is logged; {@code MCP_SERVER_ENV=production} fails the
+ *       load. Non-POSIX file systems skip the check.
  * </ul>
  *
  * <p>Accepts a single YAML file, a directory of {@code *.yaml}/{@code *.yml} files, or a
@@ -56,7 +61,7 @@ public final class YamlConfigLoader {
   }
 
   public ToolsConfig load(Path yamlFile) {
-    return parse(readFile(yamlFile), true);
+    return loadParsed(yamlFile, true);
   }
 
   /** Loads and merges every YAML file resolved from a file, directory, or glob path. */
@@ -71,14 +76,14 @@ public final class YamlConfigLoader {
       throw new ConfigException("No tools YAML files to load");
     }
     if (files.size() == 1) {
-      return parse(readFile(files.get(0)), opts.validateMerged());
+      return loadParsed(files.get(0), opts.validateMerged());
     }
 
     log.info("Loading and merging {} YAML files", files.size());
     List<ToolsConfig> configs = new ArrayList<>(files.size());
     for (Path file : files) {
       log.debug("Loading {}", file);
-      configs.add(parse(readFile(file), false));
+      configs.add(loadParsed(file, false));
     }
     ToolsConfig merged = merge(configs, opts);
     if (opts.validateMerged()) {
@@ -284,6 +289,63 @@ public final class YamlConfigLoader {
   private static boolean isYamlFile(Path file) {
     String name = file.getFileName().toString().toLowerCase();
     return name.endsWith(".yaml") || name.endsWith(".yml");
+  }
+
+  private ToolsConfig loadParsed(Path yamlFile, boolean validateReferences) {
+    String raw = readFile(yamlFile);
+    checkSecretFilePermissions(yamlFile, raw);
+    return parse(raw, validateReferences);
+  }
+
+  /**
+   * Files with a literal {@code sources.*.password} on disk (not {@code ${VAR}})
+   * are secret-bearing. Warn, or fail in production, when they grant group/world
+   * permissions. Inspects uninterpolated text so shipped packs stay world-readable.
+   */
+  private void checkSecretFilePermissions(Path yamlFile, String rawText) {
+    if (!hasLiteralSourcePassword(rawText)) {
+      return;
+    }
+    try {
+      SecretFilePermissions.enforceOwnerOnly(yamlFile, env, log);
+    } catch (IllegalStateException e) {
+      throw new ConfigException(e.getMessage(), e);
+    }
+  }
+
+  /**
+   * Whether uninterpolated YAML has a {@code sources.*.password} that is not a sole
+   * {@code ${VAR}} placeholder. Malformed YAML is ignored here; {@link #parse}
+   * reports those errors.
+   */
+  static boolean hasLiteralSourcePassword(String rawText) {
+    Object root;
+    try {
+      Yaml yaml = new Yaml(new SafeConstructor(new LoaderOptions()));
+      root = yaml.load(rawText);
+    } catch (RuntimeException e) {
+      return false;
+    }
+    if (!(root instanceof Map<?, ?> doc)) {
+      return false;
+    }
+    Object sources = doc.get("sources");
+    if (!(sources instanceof Map<?, ?> sourceMap)) {
+      return false;
+    }
+    for (Object value : sourceMap.values()) {
+      if (!(value instanceof Map<?, ?> src)) {
+        continue;
+      }
+      Object password = src.get("password");
+      if (password == null) {
+        continue;
+      }
+      if (!(password instanceof String str) || !SecretFilePermissions.isSoleEnvPlaceholder(str)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private String readFile(Path yamlFile) {

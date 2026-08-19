@@ -6,6 +6,9 @@ import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 /**
  * Minimal {@code .env} file reader (KEY=VALUE lines, {@code #} comments, optional quotes).
  * Real process environment variables always win over file entries, matching dotenv's
@@ -13,15 +16,22 @@ import java.util.Map;
  */
 public final class DotEnv {
 
+  private static final Logger log = LoggerFactory.getLogger(DotEnv.class);
+
   private DotEnv() {}
 
   /** Environment for ${VAR} interpolation: .env file entries overlaid by process env. */
   public static Map<String, String> environment(Path envFile) {
     Map<String, String> env = new LinkedHashMap<>();
+    Map<String, String> fileEntries = Map.of();
     if (envFile != null && Files.isRegularFile(envFile)) {
-      env.putAll(parse(envFile));
+      fileEntries = parse(envFile);
+      env.putAll(fileEntries);
     }
     env.putAll(System.getenv());
+    if (envFile != null && !fileEntries.isEmpty()) {
+      SecretFilePermissions.enforceOwnerOnly(envFile, env, log);
+    }
     return env;
   }
 
