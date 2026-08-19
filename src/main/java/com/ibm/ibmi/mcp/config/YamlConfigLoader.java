@@ -608,18 +608,61 @@ public final class YamlConfigLoader {
 
   /**
    * YAML {@code ignore-unauthorized} if present, else {@link SourceConfig#ENV_IGNORE_UNAUTHORIZED},
-   * else {@code false} (verify TLS). YAML wins when the key is a boolean.
+   * else {@code false} (verify TLS). YAML wins when the key is set (including quoted strings and
+   * numeric 0/1). Unambiguous coercions only — invalid values throw {@link ConfigException}.
    */
   private boolean resolveIgnoreUnauthorized(Map<String, Object> src) {
-    if (src.get("ignore-unauthorized") instanceof Boolean yamlValue) {
-      return yamlValue;
+    if (src.containsKey("ignore-unauthorized")) {
+      return parseBooleanConfigValue(
+          src.get("ignore-unauthorized"), "source ignore-unauthorized");
     }
     String raw = env.get(SourceConfig.ENV_IGNORE_UNAUTHORIZED);
     if (raw == null || raw.isBlank()) {
       return false;
     }
-    String trimmed = raw.trim();
-    return Boolean.parseBoolean(trimmed) || "1".equals(trimmed);
+    return parseBooleanConfigValue(raw.trim(), SourceConfig.ENV_IGNORE_UNAUTHORIZED);
+  }
+
+  /**
+   * Parses boolean config from YAML-native types and common string/number mistakes.
+   * Accepts {@code true}/{@code false}, {@code "true"}/{@code "false"}/{@code "1"}/{@code "0"},
+   * and integer {@code 1}/{@code 0}. Rejects null, blank strings, and ambiguous values
+   * like {@code "yes"}.
+   */
+  static boolean parseBooleanConfigValue(Object raw, String fieldName) {
+    if (raw == null) {
+      throw new ConfigException(fieldName + " must not be blank");
+    }
+    if (raw instanceof Boolean b) {
+      return b;
+    }
+    if (raw instanceof Number n) {
+      int value = n.intValue();
+      if (value == 1) {
+        return true;
+      }
+      if (value == 0) {
+        return false;
+      }
+      throw new ConfigException(
+          fieldName + " must be a boolean or 0/1 when numeric; got " + value);
+    }
+    if (raw instanceof String s) {
+      String trimmed = s.trim();
+      if (trimmed.isEmpty()) {
+          throw new ConfigException(fieldName + " must not be blank");
+      }
+      if ("true".equalsIgnoreCase(trimmed) || "1".equals(trimmed)) {
+        return true;
+      }
+      if ("false".equalsIgnoreCase(trimmed) || "0".equals(trimmed)) {
+        return false;
+      }
+      throw new ConfigException(
+          fieldName + " must be true/false or 1/0; got '" + trimmed + "'");
+    }
+    throw new ConfigException(
+        fieldName + " must be a boolean; got " + raw.getClass().getSimpleName());
   }
 
   private static boolean getBool(Map<String, Object> map, String key, boolean dflt) {
