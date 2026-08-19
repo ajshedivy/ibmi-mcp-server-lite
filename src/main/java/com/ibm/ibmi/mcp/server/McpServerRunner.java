@@ -699,10 +699,9 @@ public final class McpServerRunner {
       SqlToolConfig toolConfig,
       SourceManager sources,
       ToolSpecContext ctx) {
-    Tool tool = Tool.builder()
-        .name(toolConfig.name())
+    String inputSchemaJson = ctx.schemaBuilder().buildInputSchema(toolConfig.parameters());
+    Tool tool = Tool.builder(toolConfig.name(), ctx.jsonMapper(), inputSchemaJson)
         .description(toolConfig.description())
-        .inputSchema(ctx.jsonMapper(), ctx.schemaBuilder().buildInputSchema(toolConfig.parameters()))
         .outputSchema(ctx.jsonMapper(), ctx.outputSchema())
         .annotations(buildAnnotations(toolConfig))
         .build();
