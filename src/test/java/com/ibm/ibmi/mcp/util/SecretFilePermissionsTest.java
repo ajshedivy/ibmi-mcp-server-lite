@@ -37,15 +37,6 @@ class SecretFilePermissionsTest {
   }
 
   @Test
-  void isSecretEnvKeyMatchesDb2iCredentials() {
-    assertTrue(SecretFilePermissions.isSecretEnvKey("DB2i_PASS"));
-    assertTrue(SecretFilePermissions.isSecretEnvKey("db2i_password"));
-    assertFalse(SecretFilePermissions.isSecretEnvKey("DB2i_HOST"));
-    assertFalse(SecretFilePermissions.isSecretEnvKey("MCP_SERVER_ENV"));
-    assertFalse(SecretFilePermissions.isSecretEnvKey("API_TOKEN"));
-  }
-
-  @Test
   void ownerOnlyFilePasses(@TempDir Path dir) throws Exception {
     Path file = dir.resolve("secrets.env");
     Files.writeString(file, "DB2i_PASS=secret\n");
@@ -56,7 +47,7 @@ class SecretFilePermissionsTest {
   }
 
   @Test
-  void groupReadableFileFailsInProduction(@TempDir Path dir) throws Exception {
+  void groupPermissionFailsInProduction(@TempDir Path dir) throws Exception {
     Path file = dir.resolve("secrets.env");
     Files.writeString(file, "DB2i_PASS=secret\n");
     assumePosix(file);
@@ -66,8 +57,22 @@ class SecretFilePermissionsTest {
         IllegalStateException.class,
         () -> SecretFilePermissions.enforceOwnerOnly(
             file, Map.of("MCP_SERVER_ENV", "production"), log));
-    assertTrue(e.getMessage().contains("group/world readable"));
+    assertTrue(e.getMessage().contains("group/world permissions"));
     assertTrue(e.getMessage().contains(file.toAbsolutePath().toString()));
+  }
+
+  @Test
+  void groupWriteOnlyFileFailsInProduction(@TempDir Path dir) throws Exception {
+    Path file = dir.resolve("secrets.env");
+    Files.writeString(file, "DB2i_PASS=secret\n");
+    assumePosix(file);
+    Files.setPosixFilePermissions(file, PosixFilePermissions.fromString("rw--w----"));
+
+    IllegalStateException e = assertThrows(
+        IllegalStateException.class,
+        () -> SecretFilePermissions.enforceOwnerOnly(
+            file, Map.of("MCP_SERVER_ENV", "production"), log));
+    assertTrue(e.getMessage().contains("group/world permissions"));
   }
 
   @Test

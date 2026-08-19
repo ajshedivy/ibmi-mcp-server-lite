@@ -141,16 +141,14 @@ class MainTest {
 
   @Test
   void resolveYamlAutoReload_readsFromDotEnvFile(@TempDir Path tempDir) throws Exception {
-    Path envFile = tempDir.resolve(".env");
-    Files.writeString(envFile, "YAML_AUTO_RELOAD=false\n");
+    Path envFile = writeOwnerOnly(tempDir.resolve(".env"), "YAML_AUTO_RELOAD=false\n");
     Map<String, String> env = com.ibm.ibmi.mcp.util.DotEnv.environment(envFile);
     assertFalse(Main.resolveYamlAutoReload(env, false));
   }
 
   @Test
   void resolveConfigValue_readsTransportFromDotEnvFile(@TempDir Path tempDir) throws Exception {
-    Path envFile = tempDir.resolve(".env");
-    Files.writeString(envFile, """
+    Path envFile = writeOwnerOnly(tempDir.resolve(".env"), """
         MCP_TRANSPORT_TYPE=http
         MCP_HTTP_PORT=9090
         MCP_HTTP_HOST=127.0.0.1
@@ -166,8 +164,7 @@ class MainTest {
 
   @Test
   void resolveConfigValue_cliOverridesDotEnvFile(@TempDir Path tempDir) throws Exception {
-    Path envFile = tempDir.resolve(".env");
-    Files.writeString(envFile, "MCP_TRANSPORT_TYPE=http\n");
+    Path envFile = writeOwnerOnly(tempDir.resolve(".env"), "MCP_TRANSPORT_TYPE=http\n");
     Map<String, String> env = com.ibm.ibmi.mcp.util.DotEnv.environment(envFile);
 
     assertEquals("stdio", Main.resolveConfigValue("stdio", env, "MCP_TRANSPORT_TYPE", "stdio"));
@@ -175,8 +172,7 @@ class MainTest {
 
   @Test
   void resolveConfigValue_processEnvWinsOverDotEnvFile(@TempDir Path tempDir) throws Exception {
-    Path envFile = tempDir.resolve(".env");
-    Files.writeString(envFile, "MCP_TRANSPORT_TYPE=http\n");
+    Path envFile = writeOwnerOnly(tempDir.resolve(".env"), "MCP_TRANSPORT_TYPE=http\n");
 
     String java = Path.of(System.getProperty("java.home"), "bin", "java").toString();
     ProcessBuilder pb = new ProcessBuilder(
@@ -242,8 +238,7 @@ class MainTest {
 
   @Test
   void resolveBuiltinTools_readsFromDotEnvFile(@TempDir Path tempDir) throws Exception {
-    Path envFile = tempDir.resolve(".env");
-    Files.writeString(envFile, "IBMI_ENABLE_DEFAULT_TOOLS=true\n");
+    Path envFile = writeOwnerOnly(tempDir.resolve(".env"), "IBMI_ENABLE_DEFAULT_TOOLS=true\n");
     Map<String, String> env = com.ibm.ibmi.mcp.util.DotEnv.environment(envFile);
     assertTrue(Main.resolveBuiltinTools(env, false));
   }
@@ -291,8 +286,7 @@ class MainTest {
 
   @Test
   void resolveExecuteSql_readsFromDotEnvFile(@TempDir Path tempDir) throws Exception {
-    Path envFile = tempDir.resolve(".env");
-    Files.writeString(envFile, "IBMI_ENABLE_EXECUTE_SQL=true\n");
+    Path envFile = writeOwnerOnly(tempDir.resolve(".env"), "IBMI_ENABLE_EXECUTE_SQL=true\n");
     Map<String, String> env = com.ibm.ibmi.mcp.util.DotEnv.environment(envFile);
     assertTrue(Main.resolveExecuteSql(env, false));
   }

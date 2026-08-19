@@ -79,7 +79,8 @@ now (auth is still on the roadmap). CORS is enabled via Jetty `CrossOriginHandle
 | empty / unset | anything else | allow any Origin (dev) |
 
 `MCP_SERVER_ENV=production` fail-closes CORS when no origin list is set and
-refuses startup when secret-bearing config files are group/world readable. See
+refuses startup when a populated `.env` or secret-bearing YAML grants group/world
+permissions. See
 [docs/running-on-ibmi.md](docs/running-on-ibmi.md#secret-file-permissions).
 
 Example: `MCP_ALLOWED_ORIGINS=http://localhost:5173`. Use `*` alone for allow-any;

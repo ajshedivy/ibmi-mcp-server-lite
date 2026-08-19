@@ -29,9 +29,7 @@ public final class DotEnv {
       env.putAll(fileEntries);
     }
     env.putAll(System.getenv());
-    if (envFile != null
-        && !fileEntries.isEmpty()
-        && fileEntries.keySet().stream().anyMatch(SecretFilePermissions::isSecretEnvKey)) {
+    if (envFile != null && !fileEntries.isEmpty()) {
       SecretFilePermissions.enforceOwnerOnly(envFile, env, log);
     }
     return env;

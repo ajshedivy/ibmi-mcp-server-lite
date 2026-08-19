@@ -5,7 +5,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermission;
 import java.nio.file.attribute.PosixFilePermissions;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -13,14 +12,21 @@ import java.util.Set;
 import org.slf4j.Logger;
 
 /**
- * POSIX permission checks for secret-bearing config files ({@code .env} with IBM i
- * credential keys, tools YAML with a literal {@code sources.*.password}).
+ * POSIX permission checks for secret-bearing config files (any populated
+ * {@code .env}, tools YAML with a literal {@code sources.*.password}).
  * {@code password: ${VAR}} templates are not secret-bearing. Non-POSIX file systems
  * skip the check.
  */
 public final class SecretFilePermissions {
 
   public static final String SERVER_ENV = "MCP_SERVER_ENV";
+  private static final Set<PosixFilePermission> NON_OWNER_PERMISSIONS = Set.of(
+      PosixFilePermission.GROUP_READ,
+      PosixFilePermission.GROUP_WRITE,
+      PosixFilePermission.GROUP_EXECUTE,
+      PosixFilePermission.OTHERS_READ,
+      PosixFilePermission.OTHERS_WRITE,
+      PosixFilePermission.OTHERS_EXECUTE);
 
   private SecretFilePermissions() {}
 
@@ -49,21 +55,12 @@ public final class SecretFilePermissions {
         && trimmed.indexOf('}') == trimmed.length() - 1;
   }
 
-  /** Whether a {@code .env} key holds an IBM i credential loaded from disk. */
-  public static boolean isSecretEnvKey(String key) {
-    if (key == null || key.isBlank()) {
-      return false;
-    }
-    String upper = key.toUpperCase(Locale.ROOT);
-    return upper.equals("DB2I_PASS") || upper.equals("DB2I_PASSWORD");
-  }
-
   /**
-   * Warn, or fail in production, when {@code file} is group- or world-readable.
-   * No-op on non-POSIX file systems, missing files, or owner-only reads.
+   * Warn, or fail in production, when {@code file} grants any group or world
+   * permission. No-op on non-POSIX file systems, missing files, or owner-only files.
    */
   public static void enforceOwnerOnly(Path file, Map<String, String> env, Logger log) {
-    groupOrWorldReadableWarning(file).ifPresent(message -> {
+    nonOwnerPermissionWarning(file).ifPresent(message -> {
       if (isProduction(env)) {
         throw new IllegalStateException(message);
       }
@@ -72,10 +69,10 @@ public final class SecretFilePermissions {
   }
 
   /**
-   * Warning text when {@code file} is group- or world-readable. Empty on non-POSIX
-   * file systems, missing files, or owner-only reads.
+   * Warning text when {@code file} grants group or world permissions. Empty on
+   * non-POSIX file systems, missing files, or owner-only files.
    */
-  static Optional<String> groupOrWorldReadableWarning(Path file) {
+  static Optional<String> nonOwnerPermissionWarning(Path file) {
     if (file == null || !Files.isRegularFile(file)) {
       return Optional.empty();
     }
@@ -87,14 +84,13 @@ public final class SecretFilePermissions {
     } catch (IOException e) {
       throw new IllegalStateException("Cannot read permissions for " + file, e);
     }
-    if (!perms.contains(PosixFilePermission.GROUP_READ)
-        && !perms.contains(PosixFilePermission.OTHERS_READ)) {
+    if (perms.stream().noneMatch(NON_OWNER_PERMISSIONS::contains)) {
       return Optional.empty();
     }
     String symbolic = PosixFilePermissions.toString(perms);
     return Optional.of(
-        "Secret-bearing config file '" + file.toAbsolutePath()
-            + "' is group/world readable (" + symbolic
+        "Sensitive config file '" + file.toAbsolutePath()
+            + "' grants group/world permissions (" + symbolic
             + "). Restrict to owner-only (chmod 600).");
   }
 }

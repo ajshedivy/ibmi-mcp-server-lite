@@ -51,11 +51,11 @@ class DotEnvTest {
     Files.setPosixFilePermissions(envFile, PosixFilePermissions.fromString("rw-r--r--"));
 
     IllegalStateException e = assertThrows(IllegalStateException.class, () -> DotEnv.environment(envFile));
-    assertTrue(e.getMessage().contains("group/world readable"));
+    assertTrue(e.getMessage().contains("group/world permissions"));
   }
 
   @Test
-  void nonSecretEnvAt0644Loads(@TempDir Path dir) throws Exception {
+  void populatedEnvAt0644WarnsWhenNotProduction(@TempDir Path dir) throws Exception {
     Path envFile = dir.resolve(".env");
     Files.writeString(envFile, "YAML_AUTO_RELOAD=false\n");
     SecretFilePermissionsTest.assumePosix(envFile);
@@ -65,10 +65,25 @@ class DotEnvTest {
     assertEquals("false", env.get("YAML_AUTO_RELOAD"));
   }
 
+  @Test
+  void populatedEnvAt0644FailsInProduction(@TempDir Path dir) throws Exception {
+    Path envFile = dir.resolve(".env");
+    Files.writeString(envFile, """
+        YAML_AUTO_RELOAD=false
+        MCP_SERVER_ENV=production
+        """);
+    SecretFilePermissionsTest.assumePosix(envFile);
+    Files.setPosixFilePermissions(envFile, PosixFilePermissions.fromString("rw-r--r--"));
+
+    IllegalStateException e = assertThrows(
+        IllegalStateException.class, () -> DotEnv.environment(envFile));
+    assertTrue(e.getMessage().contains("group/world permissions"));
+  }
+
   private static void assumeProcessNotProduction() {
     String value = System.getenv("MCP_SERVER_ENV");
     Assumptions.assumeFalse(
         value != null && "production".equalsIgnoreCase(value.trim()),
-        "Process MCP_SERVER_ENV=production would fail this 0644 secret-file case");
+        "Process MCP_SERVER_ENV=production would fail this populated 0644 .env case");
   }
 }

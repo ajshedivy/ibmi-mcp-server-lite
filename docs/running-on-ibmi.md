@@ -102,14 +102,15 @@ Practical consequences:
 
 ## Secret file permissions
 
-Local try-out needs no special file modes. A group/world-readable secret-bearing
-`.env` (`DB2i_PASS` / `DB2i_PASSWORD`) or YAML with a literal `sources` password
-**warns** and still starts. Shipped packs using `password: ${DB2i_PASS}` are not
-secret-bearing.
+Local try-out needs no special file modes. Any populated `.env`, or YAML with a
+literal `sources` password, **warns** and still starts when it grants group/world
+permissions.
+Shipped packs using `password: ${DB2i_PASS}` are not secret-bearing.
 
 `MCP_SERVER_ENV=production` (the shipped Service Commander unit sets this) requires
-owner-only files (`chmod 600`) or startup fails. Leave `MCP_SERVER_ENV` unset until
-you deploy a long-lived daemon. Non-POSIX file systems skip the check.
+every populated `.env` and secret-bearing YAML to be owner-only (`chmod 600`) or
+startup fails. Leave `MCP_SERVER_ENV` unset until you deploy a long-lived daemon.
+Non-POSIX file systems skip the check.
 
 ```bash
 chmod 600 .env   # required only with MCP_SERVER_ENV=production

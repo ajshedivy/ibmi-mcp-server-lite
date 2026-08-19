@@ -1123,7 +1123,7 @@ class YamlConfigLoaderTest {
 
     YamlConfigLoader prod = new YamlConfigLoader(Map.of("MCP_SERVER_ENV", "production"));
     ConfigException e = assertThrows(ConfigException.class, () -> prod.load(yaml));
-    assertTrue(e.getMessage().contains("group/world readable"));
+    assertTrue(e.getMessage().contains("group/world permissions"));
   }
 
   @Test

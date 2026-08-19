@@ -38,8 +38,8 @@ import org.yaml.snakeyaml.constructor.SafeConstructor;
  *       member must name an entry in {@code tools}; every enabled tool needs a non-empty
  *       {@code statement}.
  *   <li>YAML files with a literal {@code sources.*.password} (not a sole
- *       {@code ${VAR}} placeholder) are secret-bearing. If the file is group/world
- *       readable, a warning is logged; {@code MCP_SERVER_ENV=production} fails the
+ *       {@code ${VAR}} placeholder) are secret-bearing. If the file grants group/world
+ *       permissions, a warning is logged; {@code MCP_SERVER_ENV=production} fails the
  *       load. Non-POSIX file systems skip the check.
  * </ul>
  *
@@ -299,8 +299,8 @@ public final class YamlConfigLoader {
 
   /**
    * Files with a literal {@code sources.*.password} on disk (not {@code ${VAR}})
-   * are secret-bearing. Warn, or fail in production, when they are group/world
-   * readable. Inspects uninterpolated text so shipped packs stay world-readable.
+   * are secret-bearing. Warn, or fail in production, when they grant group/world
+   * permissions. Inspects uninterpolated text so shipped packs stay world-readable.
    */
   private void checkSecretFilePermissions(Path yamlFile, String rawText) {
     if (!hasLiteralSourcePassword(rawText)) {
