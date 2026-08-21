@@ -867,6 +867,18 @@ class YamlConfigLoaderTest {
   }
 
   @Test
+  void loadsLiteralBracketFilename(@TempDir Path dir) throws IOException {
+    // [, { are legal in filenames on both Unix and Windows; must not be forced through glob.
+    write(dir, "tools[prod].yaml", MINIMAL_SOURCE + MINIMAL_TOOL);
+
+    ToolsConfig config = loader.loadAll(
+        dir.resolve("tools[prod].yaml").toString(), MergeOptions.fromEnv(Map.of()));
+
+    assertTrue(config.sources().containsKey("shared"));
+    assertTrue(config.tools().containsKey("query_one"));
+  }
+
+  @Test
   void loadsGlobPattern(@TempDir Path dir) throws IOException {
     write(dir, "sources.yaml", MINIMAL_SOURCE);
     write(dir, "tools.yaml", MINIMAL_TOOL);
