@@ -5,6 +5,7 @@ import java.math.BigDecimal;
 import java.nio.file.FileSystems;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.PathMatcher;
 import java.nio.file.SimpleFileVisitor;
@@ -123,26 +124,31 @@ public final class YamlConfigLoader {
   }
 
   public static List<Path> resolveToolPaths(String toolsPath) {
-    Path path = Path.of(toolsPath);
     List<Path> resolved;
-    if (Files.isRegularFile(path)) {
-      log.debug("Resolved tools path as file: {}", path);
-      resolved = List.of(path);
-    } else if (Files.isDirectory(path)) {
-      log.debug("Resolved tools path as directory: {}", path);
-      resolved = findYamlFilesInDirectory(path);
-      if (resolved.isEmpty()) {
-        throw new ConfigException(
-            "No YAML files found in directory: " + path.toAbsolutePath());
+    try {
+      Path path = Path.of(toolsPath);
+      // Prefer an existing file/directory before treating metacharacters as a glob
+      // (Unix allows [, {, etc. in filenames; Windows rejects * and ? in Path).
+      if (Files.isRegularFile(path)) {
+        log.debug("Resolved tools path as file: {}", path);
+        resolved = List.of(path);
+      } else if (Files.isDirectory(path)) {
+        log.debug("Resolved tools path as directory: {}", path);
+        resolved = findYamlFilesInDirectory(path);
+        if (resolved.isEmpty()) {
+          throw new ConfigException(
+              "No YAML files found in directory: " + path.toAbsolutePath());
+        }
+      } else if (isGlobPattern(toolsPath)) {
+        resolved = resolveGlobMatches(toolsPath);
+      } else {
+        throw new ConfigException("Tools YAML path not found: " + path.toAbsolutePath());
       }
-    } else if (isGlobPattern(toolsPath)) {
-      log.debug("Resolved tools path as glob: {}", toolsPath);
-      resolved = findYamlFilesMatchingGlob(toolsPath);
-      if (resolved.isEmpty()) {
-        throw new ConfigException("No files found matching pattern: " + toolsPath);
+    } catch (InvalidPathException e) {
+      if (!isGlobPattern(toolsPath)) {
+        throw new ConfigException("Tools YAML path not found: " + toolsPath, e);
       }
-    } else {
-      throw new ConfigException("Tools YAML path not found: " + path.toAbsolutePath());
+      resolved = resolveGlobMatches(toolsPath);
     }
 
     List<Path> deduped = new ArrayList<>(new LinkedHashSet<>(
@@ -152,6 +158,15 @@ public final class YamlConfigLoader {
             .toList()));
     log.info("Resolved {} tools YAML file(s): {}", deduped.size(), deduped);
     return deduped;
+  }
+
+  private static List<Path> resolveGlobMatches(String toolsPath) {
+    log.debug("Resolved tools path as glob: {}", toolsPath);
+    List<Path> resolved = findYamlFilesMatchingGlob(toolsPath);
+    if (resolved.isEmpty()) {
+      throw new ConfigException("No files found matching pattern: " + toolsPath);
+    }
+    return resolved;
   }
 
   private static boolean isGlobPattern(String toolsPath) {
@@ -180,8 +195,10 @@ public final class YamlConfigLoader {
   }
 
   private static List<Path> findYamlFilesMatchingGlob(String pattern) {
-    List<String> patterns = expandGlobPattern(pattern);
-    Path walkRoot = globWalkRoot(pattern);
+    // Java PathMatcher glob syntax uses '/' as separator and '\' as escape.
+    String normalized = pattern.replace('\\', '/');
+    List<String> patterns = expandGlobPattern(normalized);
+    Path walkRoot = globWalkRoot(normalized);
     if (!Files.exists(walkRoot)) {
       return List.of();
     }
