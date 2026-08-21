@@ -30,7 +30,7 @@ class GracefulShutdownTest {
 
   private static final String INITIALIZE = """
       {"jsonrpc":"2.0","id":1,"method":"initialize","params":{\
-      "protocolVersion":"2024-11-05","capabilities":{},\
+      "protocolVersion":"2025-11-25","capabilities":{},\
       "clientInfo":{"name":"shutdown-test","version":"0"}}}
       """;
   private static final String INITIALIZED = """

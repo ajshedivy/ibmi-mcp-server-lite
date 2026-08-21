@@ -266,7 +266,7 @@ public final class McpServerRunner {
     McpSyncServer server = McpServer.sync(new StdioServerTransportProvider(
             toolSpecContext.jsonMapper(), testStdin, new ByteArrayOutputStream()))
         .serverInfo(SERVER_NAME, SERVER_VERSION)
-        .capabilities(ServerCapabilities.builder().resources(false, true).tools(true).logging().build())
+        .capabilities(ServerCapabilities.builder().resources(false, true).tools(true).build())
         .tools(toolSpecs)
         .resources(resourceSpecs)
         .build();
@@ -328,7 +328,7 @@ public final class McpServerRunner {
         buildInitialResourceSpecs(handle, config);
     McpSyncServer server = McpServer.sync(transportProvider)
         .serverInfo(SERVER_NAME, SERVER_VERSION)
-        .capabilities(ServerCapabilities.builder().resources(false, true).tools(true).logging().build())
+        .capabilities(ServerCapabilities.builder().resources(false, true).tools(true).build())
         .tools(toolSpecs)
         .resources(resourceSpecs)
         .build();
@@ -389,7 +389,7 @@ public final class McpServerRunner {
     McpSyncServer server = McpServer.sync(
             new StdioServerTransportProvider(toolSpecContext.jsonMapper(), stdin, stdout))
         .serverInfo(SERVER_NAME, SERVER_VERSION)
-        .capabilities(ServerCapabilities.builder().resources(false, true).tools(true).logging().build())
+        .capabilities(ServerCapabilities.builder().resources(false, true).tools(true).build())
         .tools(toolSpecs)
         .resources(resourceSpecs)
         .build();
@@ -699,10 +699,9 @@ public final class McpServerRunner {
       SqlToolConfig toolConfig,
       SourceManager sources,
       ToolSpecContext ctx) {
-    Tool tool = Tool.builder()
-        .name(toolConfig.name())
+    String inputSchemaJson = ctx.schemaBuilder().buildInputSchema(toolConfig.parameters());
+    Tool tool = Tool.builder(toolConfig.name(), ctx.jsonMapper(), inputSchemaJson)
         .description(toolConfig.description())
-        .inputSchema(ctx.jsonMapper(), ctx.schemaBuilder().buildInputSchema(toolConfig.parameters()))
         .outputSchema(ctx.jsonMapper(), ctx.outputSchema())
         .annotations(buildAnnotations(toolConfig))
         .build();

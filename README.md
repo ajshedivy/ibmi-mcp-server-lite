@@ -15,7 +15,7 @@ against Db2 for i through [Mapepire](https://mapepire-ibmi.github.io/).
 
 Built on:
 
-- [MCP Java SDK](https://github.com/modelcontextprotocol/java-sdk) 1.1.3 (`mcp-core` + `mcp-json-jackson2`)
+- [MCP Java SDK](https://github.com/modelcontextprotocol/java-sdk) 2.0.0 (`mcp-core` + `mcp-json-jackson2`)
 - [mapepire-java](https://github.com/Mapepire-IBMi/mapepire-java) 0.1.3
 - Java 17, Maven (wrapper included)
 

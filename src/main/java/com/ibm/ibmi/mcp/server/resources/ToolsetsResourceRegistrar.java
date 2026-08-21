@@ -41,9 +41,7 @@ public final class ToolsetsResourceRegistrar {
 
   public static McpServerFeatures.SyncResourceSpecification catalogSpec(
       ObjectMapper mapper, Supplier<Map<String, ToolsetConfig>> toolsets) {
-    Resource resource = Resource.builder()
-        .uri(ToolsetsResourceLogic.CATALOG_URI)
-        .name("toolsets")
+    Resource resource = Resource.builder(ToolsetsResourceLogic.CATALOG_URI, "toolsets")
         .description("Complete catalog of all available toolsets and their tools")
         .mimeType(MIME_JSON)
         .build();
@@ -64,9 +62,7 @@ public final class ToolsetsResourceRegistrar {
         : toolsetName + " toolset";
 
     String uri = ToolsetsResourceLogic.uriFor(toolsetName);
-    Resource resource = Resource.builder()
-        .uri(uri)
-        .name(toolsetName)
+    Resource resource = Resource.builder(uri, toolsetName)
         .description(description)
         .mimeType(MIME_JSON)
         .build();
@@ -93,8 +89,11 @@ public final class ToolsetsResourceRegistrar {
           ? ToolsetsResourceLogic.buildCatalog(map)
           : ToolsetsResourceLogic.buildForToolset(map, filter);
       String json = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(payload);
-      return new ReadResourceResult(
-          List.of(new TextResourceContents(uri, MIME_JSON, json)));
+      TextResourceContents contents =
+          TextResourceContents.builder(uri, json)
+              .mimeType(MIME_JSON)
+              .build();
+      return ReadResourceResult.builder(List.of(contents)).build();
     } catch (IllegalStateException e) {
       // Empty catalog (Node InitializationFailed analogue)
       throw McpError.builder(McpSchema.ErrorCodes.INTERNAL_ERROR)

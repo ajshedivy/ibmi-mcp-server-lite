@@ -19,6 +19,7 @@ describe_sql_object is always expected in tools/list when the YAML defines sourc
 and is called on every run against QSYS2/SYSSCHEMAS.
 """
 import json
+import os
 import subprocess
 import sys
 import threading
@@ -48,9 +49,22 @@ if enable_builtin_tools:
 if enable_execute_sql:
     server_cmd.append("--execute-sql")
 
+child_env = os.environ.copy()
+# Make the smoke-test flags authoritative by overriding local .env toggles.
+# Main.java resolves:
+# - --builtin-tools vs IBMI_ENABLE_DEFAULT_TOOLS
+# - --execute-sql vs IBMI_ENABLE_EXECUTE_SQL
+# Real DB2i_* credentials still come from .env / environment.
+child_env["IBMI_ENABLE_DEFAULT_TOOLS"] = "true" if enable_builtin_tools else "false"
+child_env["IBMI_ENABLE_EXECUTE_SQL"] = "true" if enable_execute_sql else "false"
+
 proc = subprocess.Popen(
     server_cmd,
-    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    stdin=subprocess.PIPE,
+    stdout=subprocess.PIPE,
+    stderr=subprocess.PIPE,
+    text=True,
+    env=child_env)
 
 # surface server logs (stderr) without blocking
 threading.Thread(target=lambda: [print("[server]", l, end="", file=sys.stderr) for l in proc.stderr],
@@ -121,7 +135,7 @@ def print_tool_result(label, result):
 
 init_id = next_id()
 send({"jsonrpc": "2.0", "id": init_id, "method": "initialize", "params": {
-    "protocolVersion": "2024-11-05",
+    "protocolVersion": "2025-11-25",
     "capabilities": {},
     "clientInfo": {"name": "smoke-test", "version": "0.0.1"}}})
 init = recv(init_id)
