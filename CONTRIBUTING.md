@@ -69,10 +69,11 @@ cp .env.example .env
 `.env` is gitignored — never commit credentials. Only `.env.example` (placeholder values)
 is tracked.
 
-> **TLS note:** with mapepire-sdk 0.1.3+, `ignore-unauthorized: true` relaxes both
-> certificate-chain trust and TLS hostname (SAN) verification. Leave it `false` (the
-> default) when `DB2i_HOST` matches a name in the Mapepire server certificate. See
-> [docs/running-on-ibmi.md](docs/running-on-ibmi.md#tls-hostname-verification).
+> **TLS note:** shipped tool packs verify Mapepire certificates by default.
+> `ignore-unauthorized: true` or `DB2i_IGNORE_UNAUTHORIZED=true` skips
+> certificate-chain and hostname checks (development override; warned at load).
+> `DB2i_HOST` must match a SAN in the Mapepire server certificate when verification
+> is on. See [docs/running-on-ibmi.md](docs/running-on-ibmi.md#tls-certificate-verification).
 
 ## Run it locally
 

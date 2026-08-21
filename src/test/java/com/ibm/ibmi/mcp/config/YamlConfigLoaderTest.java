@@ -32,7 +32,6 @@ class YamlConfigLoaderTest {
           user: ${TEST_USER}
           password: ${TEST_PASS}
           port: 8076
-          ignore-unauthorized: true
 
       tools:
         system_status:
@@ -74,7 +73,7 @@ class YamlConfigLoaderTest {
     assertEquals("alice", source.user());
     assertEquals("secret", source.password());
     assertEquals(8076, source.port());
-    assertTrue(source.ignoreUnauthorized());
+    assertFalse(source.ignoreUnauthorized());
     assertEquals(SourceConfig.DEFAULT_MAX_SIZE, source.maxSize());
     assertEquals(SourceConfig.DEFAULT_STARTING_SIZE, source.startingSize());
     assertEquals(SourceConfig.DEFAULT_MCP_POOL_IDLE_TIMEOUT_MS, source.mcpPoolIdleTimeoutMs());
@@ -93,6 +92,208 @@ class YamlConfigLoaderTest {
   void missingEnvVarKeepsPlaceholderVerbatim() {
     YamlConfigLoader emptyEnv = new YamlConfigLoader(Map.of());
     assertEquals("host: ${NOPE}", emptyEnv.interpolateEnvVars("host: ${NOPE}"));
+  }
+
+  @Test
+  void ignoreUnauthorizedDefaultsFalseWhenOmitted() {
+    String yaml = """
+        sources:
+          a:
+            host: h
+            user: u
+            password: p
+        tools:
+          t:
+            source: a
+            description: d
+            statement: SELECT 1 FROM SYSIBM.SYSDUMMY1
+        """;
+    assertFalse(new YamlConfigLoader(Map.of()).parse(yaml).sources().get("a").ignoreUnauthorized());
+  }
+
+  @Test
+  void ignoreUnauthorizedHonorsYamlTrue() {
+    String yaml = """
+        sources:
+          a:
+            host: h
+            user: u
+            password: p
+            ignore-unauthorized: true
+        tools:
+          t:
+            source: a
+            description: d
+            statement: SELECT 1 FROM SYSIBM.SYSDUMMY1
+        """;
+    assertTrue(new YamlConfigLoader(Map.of()).parse(yaml).sources().get("a").ignoreUnauthorized());
+  }
+
+  @Test
+  void ignoreUnauthorizedFallsBackToEnvWhenYamlOmitsKey() {
+    String yaml = """
+        sources:
+          a:
+            host: h
+            user: u
+            password: p
+        tools:
+          t:
+            source: a
+            description: d
+            statement: SELECT 1 FROM SYSIBM.SYSDUMMY1
+        """;
+    YamlConfigLoader envLoader = new YamlConfigLoader(
+        Map.of(SourceConfig.ENV_IGNORE_UNAUTHORIZED, "true"));
+    assertTrue(envLoader.parse(yaml).sources().get("a").ignoreUnauthorized());
+
+    YamlConfigLoader oneLoader = new YamlConfigLoader(
+        Map.of(SourceConfig.ENV_IGNORE_UNAUTHORIZED, "1"));
+    assertTrue(oneLoader.parse(yaml).sources().get("a").ignoreUnauthorized());
+  }
+
+  @Test
+  void ignoreUnauthorizedYamlFalseWinsOverEnv() {
+    String yaml = """
+        sources:
+          a:
+            host: h
+            user: u
+            password: p
+            ignore-unauthorized: false
+        tools:
+          t:
+            source: a
+            description: d
+            statement: SELECT 1 FROM SYSIBM.SYSDUMMY1
+        """;
+    YamlConfigLoader envLoader = new YamlConfigLoader(
+        Map.of(SourceConfig.ENV_IGNORE_UNAUTHORIZED, "true"));
+    assertFalse(envLoader.parse(yaml).sources().get("a").ignoreUnauthorized());
+  }
+
+  @Test
+  void ignoreUnauthorizedCoercesQuotedYamlString() {
+    String yamlTrue = """
+        sources:
+          a:
+            host: h
+            user: u
+            password: p
+            ignore-unauthorized: "true"
+        tools:
+          t:
+            source: a
+            description: d
+            statement: SELECT 1 FROM SYSIBM.SYSDUMMY1
+        """;
+    assertTrue(new YamlConfigLoader(Map.of()).parse(yamlTrue).sources().get("a").ignoreUnauthorized());
+
+    String yamlFalse = yamlTrue.replace("\"true\"", "\"false\"");
+    assertFalse(new YamlConfigLoader(Map.of()).parse(yamlFalse).sources().get("a").ignoreUnauthorized());
+  }
+
+  @Test
+  void ignoreUnauthorizedCoercesYamlNumericZeroOne() {
+    String yamlOne = """
+        sources:
+          a:
+            host: h
+            user: u
+            password: p
+            ignore-unauthorized: 1
+        tools:
+          t:
+            source: a
+            description: d
+            statement: SELECT 1 FROM SYSIBM.SYSDUMMY1
+        """;
+    assertTrue(new YamlConfigLoader(Map.of()).parse(yamlOne).sources().get("a").ignoreUnauthorized());
+
+    String yamlZero = yamlOne.replace("1", "0");
+    assertFalse(new YamlConfigLoader(Map.of()).parse(yamlZero).sources().get("a").ignoreUnauthorized());
+  }
+
+  @Test
+  void ignoreUnauthorizedRejectsFractionalNumericValues() {
+    ConfigException positive = assertThrows(
+        ConfigException.class,
+        () -> YamlConfigLoader.parseBooleanConfigValue(1.5, "source ignore-unauthorized"));
+    assertTrue(positive.getMessage().contains("got 1.5"));
+
+    ConfigException negative = assertThrows(
+        ConfigException.class,
+        () -> YamlConfigLoader.parseBooleanConfigValue(0.5, "source ignore-unauthorized"));
+    assertTrue(negative.getMessage().contains("got 0.5"));
+  }
+
+  @Test
+  void ignoreUnauthorizedRejectsAmbiguousYamlAndEnvValues() {
+    String yamlWithQuotedYes = """
+        sources:
+          a:
+            host: h
+            user: u
+            password: p
+            ignore-unauthorized: "yes"
+        tools:
+          t:
+            source: a
+            description: d
+            statement: SELECT 1 FROM SYSIBM.SYSDUMMY1
+        """;
+    ConfigException yamlEx = assertThrows(
+        ConfigException.class, () -> new YamlConfigLoader(Map.of()).parse(yamlWithQuotedYes));
+    assertTrue(yamlEx.getMessage().contains("ignore-unauthorized"));
+
+    String yamlOmitted = """
+        sources:
+          a:
+            host: h
+            user: u
+            password: p
+        tools:
+          t:
+            source: a
+            description: d
+            statement: SELECT 1 FROM SYSIBM.SYSDUMMY1
+        """;
+    YamlConfigLoader badEnv = new YamlConfigLoader(
+        Map.of(SourceConfig.ENV_IGNORE_UNAUTHORIZED, "yes"));
+    ConfigException envEx = assertThrows(
+        ConfigException.class, () -> badEnv.parse(yamlOmitted));
+    assertTrue(envEx.getMessage().contains(SourceConfig.ENV_IGNORE_UNAUTHORIZED));
+  }
+
+  @Test
+  void ignoreUnauthorizedRejectsBlankYamlValues() {
+    String yamlNullKey = """
+        sources:
+          a:
+            host: h
+            user: u
+            password: p
+            ignore-unauthorized:
+        tools:
+          t:
+            source: a
+            description: d
+            statement: SELECT 1 FROM SYSIBM.SYSDUMMY1
+        """;
+    ConfigException nullKeyEx = assertThrows(
+        ConfigException.class, () -> new YamlConfigLoader(Map.of()).parse(yamlNullKey));
+    assertEquals("source ignore-unauthorized must not be blank", nullKeyEx.getMessage());
+
+    String yamlNullLiteral = yamlNullKey.replace("ignore-unauthorized:", "ignore-unauthorized: null");
+    ConfigException nullLiteralEx = assertThrows(
+        ConfigException.class, () -> new YamlConfigLoader(Map.of()).parse(yamlNullLiteral));
+    assertEquals("source ignore-unauthorized must not be blank", nullLiteralEx.getMessage());
+
+    String yamlEmptyString = yamlNullKey.replace(
+        "ignore-unauthorized:", "ignore-unauthorized: \"\"");
+    ConfigException emptyEx = assertThrows(
+        ConfigException.class, () -> new YamlConfigLoader(Map.of()).parse(yamlEmptyString));
+    assertEquals("source ignore-unauthorized must not be blank", emptyEx.getMessage());
   }
 
   @Test

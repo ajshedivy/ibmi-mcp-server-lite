@@ -12,6 +12,11 @@ import java.util.Map;
  * {@code MCP_POOL_IDLE_TIMEOUT_MS} / {@code MCP_POOL_QUERY_TIMEOUT_MS} apply (Node
  * defaults 300000 / 30000); YAML wins when set.
  *
+ * <p>{@code ignoreUnauthorized} is the YAML {@code ignore-unauthorized} flag (Node
+ * schema name). {@code true} skips Mapepire TLS certificate-chain and hostname
+ * verification. When the YAML key is omitted, {@link #ENV_IGNORE_UNAUTHORIZED}
+ * applies (default {@code false}). YAML wins when the key is present.
+ *
  * <pre>
  * sources:
  *   ibmi-system:
@@ -19,7 +24,6 @@ import java.util.Map;
  *     user: ${DB2i_USER}
  *     password: ${DB2i_PASS}
  *     port: 8076
- *     ignore-unauthorized: true
  *     max-size: 10
  *     starting-size: 2
  *     jdbc-options:
@@ -45,4 +49,7 @@ public record SourceConfig(
   public static final int DEFAULT_MAPEPIRE_PORT = 8076;
   public static final int DEFAULT_MAX_SIZE = 10;
   public static final int DEFAULT_STARTING_SIZE = 2;
+
+  /** Env fallback when YAML omits {@code ignore-unauthorized}. Default is verify TLS. */
+  public static final String ENV_IGNORE_UNAUTHORIZED = "DB2i_IGNORE_UNAUTHORIZED";
 }

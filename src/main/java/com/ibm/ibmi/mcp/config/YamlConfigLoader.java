@@ -1,6 +1,7 @@
 package com.ibm.ibmi.mcp.config;
 
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.nio.file.FileSystems;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
@@ -36,6 +37,9 @@ import org.yaml.snakeyaml.constructor.SafeConstructor;
  *   <li>Every tool's {@code source} must name an entry in {@code sources}; every toolset
  *       member must name an entry in {@code tools}; every enabled tool needs a non-empty
  *       {@code statement}.
+ *   <li>{@code ignore-unauthorized} defaults to {@code false} (verify Mapepire TLS). When
+ *       the YAML key is omitted, {@link SourceConfig#ENV_IGNORE_UNAUTHORIZED} applies.
+ *       {@code true} logs a warning: it skips certificate-chain and hostname checks.
  * </ul>
  *
  * <p>Accepts a single YAML file, a directory of {@code *.yaml}/{@code *.yml} files, or a
@@ -386,6 +390,14 @@ public final class YamlConfigLoader {
       int mcpPoolQueryTimeoutMs = resolvePoolTimeoutMs(
           src, "mcp-pool-query-timeout-ms", "MCP_POOL_QUERY_TIMEOUT_MS",
           SourceConfig.DEFAULT_MCP_POOL_QUERY_TIMEOUT_MS);
+      boolean ignoreUnauthorized = resolveIgnoreUnauthorized(src);
+      if (ignoreUnauthorized) {
+        log.warn(
+            "TLS certificate verification is disabled for source '{}'. "
+                + "ignore-unauthorized skips Mapepire certificate-chain and hostname checks. "
+                + "This is a development override; omit the key (or set false) in production.",
+            name);
+      }
       validatePoolSizes(name, maxSize, startingSize);
       result.put(name, new SourceConfig(
           name,
@@ -393,7 +405,7 @@ public final class YamlConfigLoader {
           getInt(src, "port", SourceConfig.DEFAULT_MAPEPIRE_PORT),
           requireString(src, "user", "source '" + name + "'"),
           requireString(src, "password", "source '" + name + "'"),
-          getBool(src, "ignore-unauthorized", false),
+          ignoreUnauthorized,
           maxSize,
           startingSize,
           mcpPoolIdleTimeoutMs,
@@ -593,6 +605,71 @@ public final class YamlConfigLoader {
       throw new ConfigException(owner + " is missing required field '" + key + "'");
     }
     return value;
+  }
+
+  /**
+   * YAML {@code ignore-unauthorized} if present, else {@link SourceConfig#ENV_IGNORE_UNAUTHORIZED},
+   * else {@code false} (verify TLS). YAML wins when the key is set (including quoted strings and
+   * numeric 0/1). Unambiguous coercions only — invalid values throw {@link ConfigException}.
+   */
+  private boolean resolveIgnoreUnauthorized(Map<String, Object> src) {
+    if (src.containsKey("ignore-unauthorized")) {
+      return parseBooleanConfigValue(
+          src.get("ignore-unauthorized"), "source ignore-unauthorized");
+    }
+    String raw = env.get(SourceConfig.ENV_IGNORE_UNAUTHORIZED);
+    if (raw == null || raw.isBlank()) {
+      return false;
+    }
+    return parseBooleanConfigValue(raw.trim(), SourceConfig.ENV_IGNORE_UNAUTHORIZED);
+  }
+
+  /**
+   * Parses boolean config from YAML-native types and common string/number mistakes.
+   * Accepts {@code true}/{@code false}, {@code "true"}/{@code "false"}/{@code "1"}/{@code "0"},
+   * and integer {@code 1}/{@code 0}. Rejects null, blank strings, and ambiguous values
+   * like {@code "yes"}.
+   */
+  static boolean parseBooleanConfigValue(Object raw, String fieldName) {
+    if (raw == null) {
+      throw new ConfigException(fieldName + " must not be blank");
+    }
+    if (raw instanceof Boolean b) {
+      return b;
+    }
+    if (raw instanceof Number n) {
+      BigDecimal value;
+      try {
+        value = new BigDecimal(n.toString());
+      } catch (NumberFormatException e) {
+        throw new ConfigException(
+            fieldName + " must be a boolean or 0/1 when numeric; got " + n);
+      }
+      if (value.compareTo(BigDecimal.ONE) == 0) {
+        return true;
+      }
+      if (value.compareTo(BigDecimal.ZERO) == 0) {
+        return false;
+      }
+      throw new ConfigException(
+          fieldName + " must be a boolean or 0/1 when numeric; got " + n);
+    }
+    if (raw instanceof String s) {
+      String trimmed = s.trim();
+      if (trimmed.isEmpty()) {
+          throw new ConfigException(fieldName + " must not be blank");
+      }
+      if ("true".equalsIgnoreCase(trimmed) || "1".equals(trimmed)) {
+        return true;
+      }
+      if ("false".equalsIgnoreCase(trimmed) || "0".equals(trimmed)) {
+        return false;
+      }
+      throw new ConfigException(
+          fieldName + " must be true/false or 1/0; got '" + trimmed + "'");
+    }
+    throw new ConfigException(
+        fieldName + " must be a boolean; got " + raw.getClass().getSimpleName());
   }
 
   private static boolean getBool(Map<String, Object> map, String key, boolean dflt) {

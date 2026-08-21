@@ -71,9 +71,9 @@ final class MapepireEnv {
   }
 
   static boolean ignoreUnauthorized() {
-    String raw = trimToNull(environment().get("DB2i_IGNORE_UNAUTHORIZED"));
+    String raw = trimToNull(environment().get(SourceConfig.ENV_IGNORE_UNAUTHORIZED));
     if (raw == null) {
-      return true;
+      return false;
     }
     return Boolean.parseBoolean(raw) || "1".equals(raw);
   }

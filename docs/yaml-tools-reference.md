@@ -22,7 +22,6 @@ sources:
     user: ${DB2i_USER}        # required
     password: ${DB2i_PASS}    # required
     port: 8076                # optional, default 8076
-    ignore-unauthorized: true # optional, default false — skip TLS chain + hostname verification (mapepire-sdk 0.1.3+)
     max-size: 10              # optional, default 10 — max SqlJobs in the connection pool
     starting-size: 2          # optional, default 2 — jobs created at pool init
     mcp-pool-idle-timeout-ms: 300000  # optional — idle pool eviction (ms); 0 disables
@@ -37,6 +36,12 @@ sources:
 >
 > When the YAML timeout keys are omitted, `MCP_POOL_IDLE_TIMEOUT_MS` (default 300000)
 > and `MCP_POOL_QUERY_TIMEOUT_MS` (default 30000) apply. Explicit YAML values win.
+>
+> `ignore-unauthorized` (optional, default `false`) skips Mapepire TLS certificate-chain
+> and hostname verification when `true`. Omit the key in production. When omitted,
+> `DB2i_IGNORE_UNAUTHORIZED` applies (`true` / `1` enable the override). YAML wins when
+> the key is present. The server warns at load if verification is disabled. See
+> [running-on-ibmi.md](running-on-ibmi.md#tls-certificate-verification).
 
 ## `tools` — parameterized SQL
 
