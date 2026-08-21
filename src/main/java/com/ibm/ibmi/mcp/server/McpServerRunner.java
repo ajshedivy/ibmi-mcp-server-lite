@@ -266,7 +266,7 @@ public final class McpServerRunner {
     McpSyncServer server = McpServer.sync(new StdioServerTransportProvider(
             toolSpecContext.jsonMapper(), testStdin, new ByteArrayOutputStream()))
         .serverInfo(SERVER_NAME, SERVER_VERSION)
-        .capabilities(ServerCapabilities.builder().resources(false, true).tools(true).logging().build())
+        .capabilities(ServerCapabilities.builder().resources(false, true).tools(true).build())
         .tools(toolSpecs)
         .resources(resourceSpecs)
         .build();
@@ -328,7 +328,7 @@ public final class McpServerRunner {
         buildInitialResourceSpecs(handle, config);
     McpSyncServer server = McpServer.sync(transportProvider)
         .serverInfo(SERVER_NAME, SERVER_VERSION)
-        .capabilities(ServerCapabilities.builder().resources(false, true).tools(true).logging().build())
+        .capabilities(ServerCapabilities.builder().resources(false, true).tools(true).build())
         .tools(toolSpecs)
         .resources(resourceSpecs)
         .build();
@@ -389,7 +389,7 @@ public final class McpServerRunner {
     McpSyncServer server = McpServer.sync(
             new StdioServerTransportProvider(toolSpecContext.jsonMapper(), stdin, stdout))
         .serverInfo(SERVER_NAME, SERVER_VERSION)
-        .capabilities(ServerCapabilities.builder().resources(false, true).tools(true).logging().build())
+        .capabilities(ServerCapabilities.builder().resources(false, true).tools(true).build())
         .tools(toolSpecs)
         .resources(resourceSpecs)
         .build();
