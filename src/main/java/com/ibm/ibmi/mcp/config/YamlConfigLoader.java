@@ -1,6 +1,7 @@
 package com.ibm.ibmi.mcp.config;
 
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.nio.file.FileSystems;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
@@ -637,15 +638,21 @@ public final class YamlConfigLoader {
       return b;
     }
     if (raw instanceof Number n) {
-      int value = n.intValue();
-      if (value == 1) {
+      BigDecimal value;
+      try {
+        value = new BigDecimal(n.toString());
+      } catch (NumberFormatException e) {
+        throw new ConfigException(
+            fieldName + " must be a boolean or 0/1 when numeric; got " + n);
+      }
+      if (value.compareTo(BigDecimal.ONE) == 0) {
         return true;
       }
-      if (value == 0) {
+      if (value.compareTo(BigDecimal.ZERO) == 0) {
         return false;
       }
       throw new ConfigException(
-          fieldName + " must be a boolean or 0/1 when numeric; got " + value);
+          fieldName + " must be a boolean or 0/1 when numeric; got " + n);
     }
     if (raw instanceof String s) {
       String trimmed = s.trim();

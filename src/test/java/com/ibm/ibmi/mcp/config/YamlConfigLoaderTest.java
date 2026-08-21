@@ -215,6 +215,19 @@ class YamlConfigLoaderTest {
   }
 
   @Test
+  void ignoreUnauthorizedRejectsFractionalNumericValues() {
+    ConfigException positive = assertThrows(
+        ConfigException.class,
+        () -> YamlConfigLoader.parseBooleanConfigValue(1.5, "source ignore-unauthorized"));
+    assertTrue(positive.getMessage().contains("got 1.5"));
+
+    ConfigException negative = assertThrows(
+        ConfigException.class,
+        () -> YamlConfigLoader.parseBooleanConfigValue(0.5, "source ignore-unauthorized"));
+    assertTrue(negative.getMessage().contains("got 0.5"));
+  }
+
+  @Test
   void ignoreUnauthorizedRejectsAmbiguousYamlAndEnvValues() {
     String yamlWithQuotedYes = """
         sources:
